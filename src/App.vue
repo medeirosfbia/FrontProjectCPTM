@@ -9,6 +9,8 @@ import Form from './components/Form.vue'
 const showSplash = ref(true)
 const showMainAdm = ref(false)
 const showMainUser = ref(false)
+const showForm = ref(false)
+const currentInspection = ref(null)
 
 onMounted(() => {
   setTimeout(() => (showSplash.value = false), 2000)
@@ -21,8 +23,8 @@ onMounted(() => {
       <Splash v-if="showSplash" key="splash" />
       <div v-else key="main" class="main-content">
         <MainAdm v-if="showMainAdm" @logout="showMainAdm = false" />
-        <MainUser v-else-if="showMainUser" @logout="showMainUser = false" />
-        <Form v-else-if="showForm" @submit="showMainUser = true" @cancel="showMainUser = true" />
+        <MainUser v-else-if="showMainUser" @logout="showMainUser = false" @goToForm="(ins) => { showMainUser = false; currentInspection = ins; showForm = true }" />
+        <Form v-else-if="showForm" :initialInspection="currentInspection" @submit="() => { showForm = false; showMainUser = true }" @cancel="() => { showForm = false; showMainUser = true }" />
         <Login v-else @login-adm-success="showMainAdm = true" @login-user-success="showMainUser = true" />
       </div>
     </transition>
