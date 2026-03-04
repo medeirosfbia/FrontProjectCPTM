@@ -34,19 +34,20 @@
 
           <!-- Pagination controls -->
           <div class="pagination">
-            <button type="button" class="btn" @click="prevPage" :disabled="currentPage === 0">Anterior</button>
             <div class="page-buttons">
               <button v-for="n in totalPages" :key="n" type="button" class="btn page-btn"
                 :class="{ active: currentPage === (n - 1) }" @click="goToPage(n - 1)">{{ n }}</button>
             </div>
-            <button type="button" class="btn" @click="nextPage"
+          </div>
+          <div class="pagination arrows">
+            <button type="button" class="btn" @click="prevPage" :disabled="currentPage === 0">Anterior</button>
+            <button v-if="currentPage === totalPages - 1" type="button" class="btn-primary" @click="submitForm">Enviar</button>
+            <button v-else type="button" class="btn" @click="nextPage"
               :disabled="currentPage >= totalPages - 1">Próxima</button>
           </div>
 
           <!-- Actions: submit on last page, otherwise Next also available -->
           <div class="actions">
-            <button v-if="currentPage === totalPages - 1" class="btn-primary" type="submit">Enviar</button>
-            <button v-else class="btn-primary" type="button" @click="nextPage">Próxima etapa</button>
             <button type="button" class="btn" @click="saveDraft">Salvar rascunho</button>
             <button type="button" class="btn ghost" @click="cancel">Cancelar</button>
           </div>
@@ -60,8 +61,10 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
+import { useInspectionStore } from '../stores/inspectionStore'
 
 const props = defineProps({ initialInspection: { type: Object, default: null } })
+const store = useInspectionStore()
 const form = reactive({ title: '', location: '', address: '', notes: '', q1: '', q2: '', q3: '', q4: '', q5: '', q6: '' })
 const status = ref('')
 const showUserMenu = ref(false)
@@ -94,6 +97,7 @@ function submitForm() {
   setTimeout(() => {
     const payload = { ...form, id: form.id || ('i' + Date.now()), status: 'Enviado' }
     status.value = 'Enviado com sucesso'
+    store.addInspection(payload)
     emit('submit', payload)
   }, 900)
 }
@@ -270,7 +274,9 @@ textarea {
 }
 
 .btn.ghost {
-  background: transparent
+  color: #f7f7f8;
+  background: #b60c0c;
+  border: 1px solid #8b8b8b
 }
 
 .status {

@@ -79,24 +79,34 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useInspectionStore } from '../stores/inspectionStore'
 
-const inspections = ref([])
+const store = useInspectionStore() // ← usamos o store
 const newTitle = ref('')
 const showUserMenu = ref(false)
 const viewFilter = ref('all')
 const emit = defineEmits(['logout', 'goToForm'])
 
+// ✅ AGORA CRIA USANDO O STORE
 function createInspection(returnObj = false) {
-    const title = newTitle.value.trim() || `Inspeção ${inspections.value.length + 1}`
-    const ins = { id: 'i' + Date.now(), title, status: 'Não enviada' }
-    inspections.value.push(ins)
+    const title =
+        newTitle.value.trim() ||
+        `Inspeção ${store.inspections.length + 1}`
+
+    const ins = {
+        id: 'i' + Date.now(),
+        title,
+        status: 'Não enviada'
+    }
+
+    store.inspections.push(ins) // ← mudou aqui
+
     newTitle.value = ''
     if (returnObj) return ins
 }
 
 function openNewInspection() {
     const ins = createInspection(true)
-    // abrir formulário na nova inspeção
     emit('goToForm', ins)
 }
 
@@ -107,7 +117,8 @@ function sendInspection(ins) {
 }
 
 function deleteInspection(ins) {
-    inspections.value = inspections.value.filter(i => i.id !== ins.id)
+    // ← agora remove do store
+    store.inspections = store.inspections.filter(i => i.id !== ins.id)
 }
 
 function logout() {
@@ -119,16 +130,23 @@ function setFilter(key) {
     viewFilter.value = key
 }
 
+// ✅ FILTRO AGORA USA STORE
 const filteredInspections = computed(() => {
-    if (viewFilter.value === 'all') return inspections.value
-    if (viewFilter.value === 'sent') return inspections.value.filter(i => i.status === 'Enviado')
-    if (viewFilter.value === 'scheduled') return inspections.value.filter(i => i.status !== 'Enviado')
-    return inspections.value
+    if (viewFilter.value === 'all') return store.inspections
+    if (viewFilter.value === 'sent')
+        return store.inspections.filter(i => i.status === 'Enviado')
+    if (viewFilter.value === 'scheduled')
+        return store.inspections.filter(i => i.status !== 'Enviado')
+    return store.inspections
 })
 
+
+// --------------------
 // Modal de confirmação
+// --------------------
+
 const modalVisible = ref(false)
-const modalAction = ref('') // 'send' | 'delete'
+const modalAction = ref('')
 const modalTarget = ref(null)
 
 function confirmAction(action, ins) {
@@ -149,7 +167,6 @@ function confirmModal() {
         deleteInspection(modalTarget.value)
     }
 
-    // fechar modal
     modalVisible.value = false
     modalTarget.value = null
     modalAction.value = ''
@@ -161,8 +178,8 @@ function cancelModal() {
     modalAction.value = ''
 }
 </script>
-<script>
-</script>
+
+
 
 <style scoped>
 /* Use user panel visual language */
