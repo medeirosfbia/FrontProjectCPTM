@@ -12,6 +12,7 @@
                 <div class="user-area">
                     <button class="avatar" @click="showUserMenu = !showUserMenu" aria-label="Usuário">👤</button>
                     <div v-if="showUserMenu" class="user-menu">
+                        <button class="btn" @click="createUser">Criar Usuário</button>
                         <button class="user-logout" @click="logout">Sair</button>
                     </div>
                 </div>
@@ -92,6 +93,7 @@ import markerRed from '../assets/marker-red.svg'
 const query = ref('')
 const sortKey = ref('name')
 const sortDir = ref(1)
+const emit = defineEmits(['logout', 'create-user'])
 
 // sample workers with coordinates
 const workers = ref([
@@ -125,8 +127,11 @@ function seeMore(w) {
     alert('Mais detalhes em breve. Ainda em desenvolvimento!')
 }
 
+function createUser() {
+    emit('create-user')
+}
+
 const showUserMenu = ref(false)
-const emit = defineEmits(['logout'])
 function logout() {
     showUserMenu.value = false
     emit('logout')
@@ -184,6 +189,7 @@ watch(workers, () => addMarkers(filtered.value), { deep: true })
 .container {
     min-height: 100vh;
     width: 100%;
+    border-radius: 8px;
     background: linear-gradient(180deg, #f7f7f8, #ffd5d5);
 }
 
@@ -218,6 +224,73 @@ watch(workers, () => addMarkers(filtered.value), { deep: true })
     margin: 0;
     color: #666
 }
+
+.user-area {
+    margin-left: auto;
+    position: relative;
+    display: flex;
+    align-items: center
+}
+
+.avatar {
+    background: #fff;
+    border: 1px solid #eee;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px
+}
+
+.user-menu {
+    position: absolute;
+    right: 0;
+    top: 48px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    padding: 0.35rem;
+    min-width: 110px;
+    z-index: 50
+}
+
+.user-menu .btn {
+    background: none;
+    border: none;
+    margin: auto;
+    padding: 0.5rem 0.75rem;
+    width: 100%;
+    text-align: left;
+    color: #494949;
+    cursor: pointer;
+    font-weight: 600;
+    border-radius: 6px
+}
+
+.user-menu .btn:hover {
+    background: #f0f0f0
+}
+
+.user-logout {
+    background: #ffffff;
+    border: none;
+    padding: 0.5rem 0.75rem;
+    width: 100%;
+    text-align: left;
+    color: #b71c1c;
+    cursor: pointer;
+    font-weight: 600;
+    border-radius: 6px
+}
+
+.user-logout:hover {
+    background: #fff0f0
+}
+
+
 
 .controls {
     display: flex;
@@ -322,55 +395,6 @@ watch(workers, () => addMarkers(filtered.value), { deep: true })
 
     .workers {
         min-width: 600px;
-
-        /* Avatar / user menu */
-        .user-area {
-            margin-left: auto;
-            position: relative;
-            display: flex;
-            align-items: center
-        }
-
-        .avatar {
-            background: #fff;
-            border: 1px solid #eee;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 18px
-        }
-
-        .user-menu {
-            position: absolute;
-            right: 0;
-            top: 48px;
-            background: #fff;
-            border-radius: 8px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-            padding: 0.35rem;
-            min-width: 110px;
-            z-index: 50
-        }
-
-        .user-logout {
-            background: none;
-            border: none;
-            padding: 0.5rem 0.75rem;
-            width: 100%;
-            text-align: left;
-            color: #b71c1c;
-            cursor: pointer;
-            font-weight: 600;
-            border-radius: 6px
-        }
-
-        .user-logout:hover {
-            background: #fff0f0
-        }
     }
 }
 

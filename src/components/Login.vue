@@ -1,20 +1,22 @@
 <template>
-    <div class="login-screen">
-        <div class="card">
-            <img src="../assets/cptm_logo.png" alt="CPTM" class="logo" />
-            <h2>Entrar</h2>
-            <form @submit.prevent="submit">
-                <label class="field">
-                    <span>Email</span>
-                    <input v-model="email" type="email" required placeholder="seu@exemplo.com" />
-                </label>
-                <label class="field">
-                    <span>Senha</span>
-                    <input v-model="password" type="password" required placeholder="••••••••" />
-                </label>
-                <button class="btn-primary" type="submit">Entrar</button>
-            </form>
-            <p class="muted">CPTM + FATEC - Projeto de demonstração</p>
+    <div class="container">
+        <div class="login-screen">
+            <div class="card">
+                <img src="../assets/cptm_logo.png" alt="CPTM" class="logo" />
+                <h2>Entrar</h2>
+                <form @submit.prevent="submit">
+                    <label class="field">
+                        <span>Email</span>
+                        <input v-model="email" type="email" required placeholder="seu@exemplo.com" />
+                    </label>
+                    <label class="field">
+                        <span>Senha</span>
+                        <input v-model="password" type="password" required placeholder="••••••••" />
+                    </label>
+                    <button class="btn-primary" type="submit">Entrar</button>
+                </form>
+                <p class="muted">CPTM + FATEC - Projeto de demonstração</p>
+            </div>
         </div>
     </div>
 </template>
@@ -44,6 +46,7 @@ function submit() {
 </script>
 
 <style scoped>
+
 .login-screen {
     position: fixed;
     inset: 0;
