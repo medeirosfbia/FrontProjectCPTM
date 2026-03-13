@@ -23,8 +23,9 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 
-const emit = defineEmits(['login-adm-success', 'login-user-success'])
+const router = useRouter()
 const email = ref('')
 const password = ref('')
 
@@ -36,14 +37,14 @@ function submit() {
         localStorage.setItem("auth_token", "fake_token_admin")
         localStorage.setItem("user_role", "admin")
 
-        // emitir evento para o pai para navegar ao Main
-        emit('login-adm-success')
+        // router para navegar ao Main admin
+        router.push('/main-admin')
     } else if (email.value === 'user@cptm.com' && password.value === 'user123456') {
 
         localStorage.setItem("auth_token", "fake_token_user")
         localStorage.setItem("user_role", "user")
-        // emitir evento para o pai para navegar ao Main
-        emit('login-user-success')
+        // router para navegar ao Main user
+        router.push('/main-user')
 
     } else {
         alert('Credenciais inválidas ou ausentes.')

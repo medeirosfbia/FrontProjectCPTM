@@ -9,6 +9,30 @@
 </template>
 
 <script setup>
+import { onMounted } from "vue"
+import { useRouter } from "vue-router"
+
+const router = useRouter()
+
+onMounted(async () => {
+
+    // Simula carregamento de dados ou verificação de autenticação
+    await new Promise(resolve => setTimeout(resolve, 2000))
+
+    const token = localStorage.getItem("auth_token")
+    const role = localStorage.getItem("user_role")
+
+    if (!token) {
+        router.replace("/login")
+    }
+    else if (role === "admin") {
+        router.replace("/main-admin")
+    }
+    else if (role === "user") {
+        router.replace("/main-user")
+    }
+
+})
 </script>
 
 <style scoped>

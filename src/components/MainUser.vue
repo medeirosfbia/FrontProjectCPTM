@@ -86,18 +86,21 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useInspectionStore } from '../stores/inspectionStore'
+import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 
 const store = useInspectionStore() // ← usamos o store
+const { inspections } = storeToRefs(store) // ← pegamos as inspeções como refs reativas
 const newTitle = ref('')
 const showUserMenu = ref(false)
 const viewFilter = ref('all')
-const emit = defineEmits(['logout', 'goToForm'])
+const router = useRouter()
 
 // ✅ AGORA CRIA USANDO O STORE
 function createInspection(returnObj = false) {
     const title =
         newTitle.value.trim() ||
-        `Inspeção ${store.inspections.length + 1}`
+        `Inspeção ${inspections.value.length + 1}`
 
     const ins = {
         id: 'i' + Date.now(),
@@ -106,6 +109,7 @@ function createInspection(returnObj = false) {
     }
 
     store.inspections.push(ins) // ← mudou aqui
+    store.saveInspections?.()
 
     newTitle.value = ''
     if (returnObj) return ins
@@ -113,13 +117,17 @@ function createInspection(returnObj = false) {
 
 function openNewInspection() {
     const ins = createInspection(true)
-    emit('goToForm', ins)
+    goToForm(ins)
 }
 
 function sendInspection(ins) {
     if (ins.status === 'Enviado' || ins.status === 'Enviando...') return
     ins.status = 'Enviando...'
     setTimeout(() => { ins.status = 'Enviado' }, 900)
+}
+
+function goToForm(ins) {
+    router.push(`/form/${ins.id}`)
 }
 
 function deleteInspection(ins) {
@@ -132,7 +140,7 @@ function logout() {
     localStorage.removeItem("user_role")
 
     showUserMenu.value = false
-    emit('logout')
+    router.push('/login')
 }
 
 function setFilter(key) {
@@ -141,12 +149,12 @@ function setFilter(key) {
 
 // ✅ FILTRO AGORA USA STORE
 const filteredInspections = computed(() => {
-    if (viewFilter.value === 'all') return store.inspections
+    if (viewFilter.value === 'all') return inspections.value
     if (viewFilter.value === 'sent')
-        return store.inspections.filter(i => i.status === 'Enviado')
+        return inspections.value.filter(i => i.status === 'Enviado')
     if (viewFilter.value === 'scheduled')
-        return store.inspections.filter(i => i.status !== 'Enviado')
-    return store.inspections
+        return inspections.value.filter(i => i.status !== 'Enviado')
+    return inspections.value
 })
 
 

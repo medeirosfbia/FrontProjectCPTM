@@ -61,57 +61,74 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useInspectionStore } from '../stores/inspectionStore'
+import { useRouter, useRoute } from 'vue-router'
 
-const props = defineProps({ initialInspection: { type: Object, default: null } })
+const router = useRouter()
+const route = useRoute()
 const store = useInspectionStore()
-const form = reactive({ title: '', location: '', address: '', notes: '', q1: '', q2: '', q3: '', q4: '', q5: '', q6: '' })
-const status = ref('')
-const showUserMenu = ref(false)
-const emit = defineEmits(['submit', 'cancel', 'logout'])
 
-// Pagination state
+const showUserMenu = ref(false)
+const status = ref('')
+
+// pegar id da rota
+const inspectionId = route.params.id
+
+// estado do formulário
+const form = reactive({
+  id: null,
+  title: '',
+  location: '',
+  address: '',
+  notes: '',
+  q1: '',
+  q2: '',
+  q3: '',
+  q4: '',
+  q5: '',
+  q6: ''
+})
+
+// carregar inspeção existente
+onMounted(() => {
+  if (!inspectionId) return
+
+  const inspection = store.inspections.find(i => i.id === inspectionId)
+
+  if (inspection) {
+    Object.assign(form, inspection)
+  }
+})
+
+
+// ----------------------
+// Paginação
+// ----------------------
+
 const currentPage = ref(0)
+
 const pages = [
-  [{ key: 'title', label: 'Título', placeholder: 'Título da inspeção', type: 'text' }, { key: 'location', label: 'Local', placeholder: 'Local/Estação', type: 'text' }],
-  [{ key: 'address', label: 'Endereço', placeholder: 'Endereço (opcional)', type: 'text' }, { key: 'q1', label: 'Pergunta 1', placeholder: 'Resposta da pergunta 1', type: 'text' }, { key: 'q5', label: 'Pergunta 1.1', placeholder: 'Resposta adicional 1', type: 'text' }, { key: 'q6', label: 'Pergunta 1.2', placeholder: 'Resposta adicional 2', type: 'text' }],
-  [{ key: 'q2', label: 'Pergunta 2', placeholder: 'Resposta da pergunta 2', type: 'text' }, { key: 'q3', label: 'Pergunta 3', placeholder: 'Resposta da pergunta 3', type: 'text' }],
-  [{ key: 'q4', label: 'Observações', placeholder: 'Anotações da inspeção', type: 'textarea' }]
+  [
+    { key: 'title', label: 'Título', placeholder: 'Título da inspeção', type: 'text' },
+    { key: 'location', label: 'Local', placeholder: 'Local/Estação', type: 'text' }
+  ],
+  [
+    { key: 'address', label: 'Endereço', placeholder: 'Endereço (opcional)', type: 'text' },
+    { key: 'q1', label: 'Pergunta 1', placeholder: 'Resposta da pergunta 1', type: 'text' },
+    { key: 'q5', label: 'Pergunta 1.1', placeholder: 'Resposta adicional 1', type: 'text' },
+    { key: 'q6', label: 'Pergunta 1.2', placeholder: 'Resposta adicional 2', type: 'text' }
+  ],
+  [
+    { key: 'q2', label: 'Pergunta 2', placeholder: 'Resposta da pergunta 2', type: 'text' },
+    { key: 'q3', label: 'Pergunta 3', placeholder: 'Resposta da pergunta 3', type: 'text' }
+  ],
+  [
+    { key: 'q4', label: 'Observações', placeholder: 'Anotações da inspeção', type: 'textarea' }
+  ]
 ]
 
 const totalPages = pages.length
-
-// Initialize with incoming inspection if provided
-if (props.initialInspection) {
-  form.title = props.initialInspection.title || ''
-  if (props.initialInspection.id) form.id = props.initialInspection.id
-}
-
-function submitForm() {
-  if (!form.title && !form.location) {
-    status.value = 'Preencha ao menos Título ou Local.'
-    return
-  }
-  status.value = 'Enviando...'
-  // Simula envio
-  setTimeout(() => {
-    const payload = { ...form, id: form.id || ('i' + Date.now()), status: 'Enviado' }
-    status.value = 'Enviado com sucesso'
-    store.addInspection(payload)
-    emit('submit', payload)
-  }, 900)
-}
-
-function saveDraft() {
-  const payload = { ...form, id: 'i' + Date.now(), draft: true }
-  status.value = 'Rascunho salvo'
-  emit('submit', payload)
-}
-
-function cancel() {
-  emit('cancel')
-}
 
 function prevPage() {
   if (currentPage.value > 0) currentPage.value--
@@ -122,7 +139,70 @@ function nextPage() {
 }
 
 function goToPage(i) {
-  if (i >= 0 && i < totalPages) currentPage.value = i
+  currentPage.value = i
+}
+
+
+// ----------------------
+// Salvar inspeção
+// ----------------------
+
+function submitForm() {
+  if (!form.title && !form.location) {
+    status.value = 'Preencha ao menos Título ou Local.'
+    return
+  }
+
+  status.value = 'Enviando...'
+
+  setTimeout(() => {
+
+    const payload = {
+      ...form,
+      id: form.id || ('i' + Date.now()),
+      status: 'Enviado'
+    }
+
+    const existingIndex = store.inspections.findIndex(i => i.id === payload.id)
+
+    if (existingIndex !== -1) {
+      store.inspections[existingIndex] = payload
+    } else {
+      store.inspections.push(payload)
+    }
+
+    status.value = 'Enviado com sucesso'
+
+    router.push('/main-user')
+
+  }, 800)
+}
+
+
+function saveDraft() {
+
+  const payload = {
+    ...form,
+    id: form.id || ('i' + Date.now()),
+    status: 'Não enviada'
+  }
+
+  const existingIndex = store.inspections.findIndex(i => i.id === payload.id)
+
+  if (existingIndex !== -1) {
+    store.inspections[existingIndex] = payload
+  } else {
+    store.inspections.push(payload)
+  }
+
+  status.value = 'Rascunho salvo'
+
+  router.push('/main-user')
+}
+
+
+function cancel() {
+  router.push('/main-user')
 }
 
 function logout() {
@@ -130,7 +210,7 @@ function logout() {
   localStorage.removeItem("user_role")
 
   showUserMenu.value = false
-  emit('logout')
+  router.push('/login')
 }
 </script>
 

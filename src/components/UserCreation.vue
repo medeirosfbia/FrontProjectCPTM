@@ -39,8 +39,9 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 
-const emit = defineEmits(['create-user-success', 'cancel'])
+const router = useRouter()
 const name = ref('')
 const email = ref('')
 const password = ref('')
@@ -52,12 +53,16 @@ const isUser = ref(false)
 function submit() {
     // placeholder: aqui você chamaria API de autenticação
     console.log('Login',name.value, email.value, password.value, birthDate.value, isAdmin.value, isUser.value)
-    emit('create-user-success')
+    if (!isAdmin.value && !isUser.value) {
+        alert('Selecione pelo menos um tipo de usuário.')
+        return
+    }
+    router.push('/main-admin')
 
 }
 
 function cancel() {
-    emit('cancel')
+    router.push('/main-admin')
 }
 
 </script>

@@ -82,6 +82,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import iconUrl from 'leaflet/dist/images/marker-icon.png'
@@ -93,7 +94,7 @@ import markerRed from '../assets/marker-red.svg'
 const query = ref('')
 const sortKey = ref('name')
 const sortDir = ref(1)
-const emit = defineEmits(['logout', 'create-user'])
+const router = useRouter()
 
 // sample workers with coordinates
 const workers = ref([
@@ -128,7 +129,7 @@ function seeMore(w) {
 }
 
 function createUser() {
-    emit('create-user')
+    router.push('/create-user')
 }
 
 const showUserMenu = ref(false)
@@ -137,7 +138,7 @@ function logout() {
     localStorage.removeItem("auth_token")
     localStorage.removeItem("user_role")
     showUserMenu.value = false
-    emit('logout')
+    router.push('/login')
 }
 
 let map = null
