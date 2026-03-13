@@ -20,15 +20,19 @@
       <div class="table-wrap">
         <form class="form" @submit.prevent="submitForm">
           <!-- Paginated pages: render only fields for current page -->
-          <div v-for="(page, idx) in pages" :key="idx" v-show="currentPage === idx" class="page">
-            <div v-for="field in page" :key="field.key" class="row">
+          <div class="page">
+            <div v-for="field in pages[currentPage]" :key="field.key" class="row">
               <label>{{ field.label }}</label>
+
               <template v-if="field.type === 'textarea'">
-                <textarea v-model="form[field.key]" rows="4" :placeholder="field.placeholder"></textarea>
+                <textarea v-model="form[field.key]" rows="4" :placeholder="field.placeholder">
+      </textarea>
               </template>
+
               <template v-else>
                 <input v-model="form[field.key]" :placeholder="field.placeholder" />
               </template>
+
             </div>
           </div>
 
@@ -36,15 +40,18 @@
           <div class="pagination">
             <div class="page-buttons">
               <button v-for="n in totalPages" :key="n" type="button" class="btn page-btn"
-                :class="{ active: currentPage === (n - 1) }" @click="goToPage(n - 1)">{{ n }}</button>
+                :class="{ active: currentPage === (n - 1) }" @click="goToPage(n - 1)">
+                {{ n }}
+              </button>
             </div>
           </div>
           <div class="pagination arrows">
             <button type="button" class="btn" @click="prevPage" :disabled="currentPage === 0">Anterior</button>
             <button v-if="currentPage === totalPages - 1" type="button" class="btn-primary"
               @click="submitForm">Enviar</button>
-            <button v-else type="button" class="btn" @click="nextPage"
-              :disabled="currentPage >= totalPages - 1">Próxima</button>
+            <button v-else type="button" class="btn" @click="nextPage" :disabled="currentPage >= totalPages - 1">
+              Próxima
+            </button>
           </div>
 
           <!-- Actions: submit on last page, otherwise Next also available -->
@@ -64,6 +71,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { useRouter, useRoute } from 'vue-router'
+import { computed } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -128,18 +136,25 @@ const pages = [
   ]
 ]
 
-const totalPages = pages.length
+
+const totalPages = computed(() => pages.length)
 
 function prevPage() {
-  if (currentPage.value > 0) currentPage.value--
+  if (currentPage.value > 0) {
+    currentPage.value--
+  }
 }
 
 function nextPage() {
-  if (currentPage.value < totalPages - 1) currentPage.value++
+  if (currentPage.value < totalPages.value - 1) {
+    currentPage.value++
+  }
 }
 
 function goToPage(i) {
-  currentPage.value = i
+  if (i >= 0 && i < totalPages.value) {
+    currentPage.value = i
+  }
 }
 
 
