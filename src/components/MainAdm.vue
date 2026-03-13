@@ -45,7 +45,7 @@
                             <td>
                                 <span :class="['badge', w.online ? 'online' : 'offline']">{{ w.online ? 'Online' :
                                     'Offline'
-                                }}</span>
+                                    }}</span>
                             </td>
                             <td>
                                 <button class="btn-small" @click="seeMore(w)">Ver mais</button>
@@ -65,7 +65,7 @@
                     <div class="mobile-meta">
                         <span class="mono">Envios: {{ w.submissions }}</span>
                         <span :class="['badge', w.online ? 'online' : 'offline']">{{ w.online ? 'Online' : 'Offline'
-                        }}</span>
+                            }}</span>
                     </div>
                     <div class="mobile-actions">
                         <button class="btn-small" @click="seeMore(w)">Ver mais</button>
@@ -133,6 +133,9 @@ function createUser() {
 
 const showUserMenu = ref(false)
 function logout() {
+
+    localStorage.removeItem("auth_token")
+    localStorage.removeItem("user_role")
     showUserMenu.value = false
     emit('logout')
 }

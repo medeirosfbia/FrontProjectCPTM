@@ -41,7 +41,8 @@
           </div>
           <div class="pagination arrows">
             <button type="button" class="btn" @click="prevPage" :disabled="currentPage === 0">Anterior</button>
-            <button v-if="currentPage === totalPages - 1" type="button" class="btn-primary" @click="submitForm">Enviar</button>
+            <button v-if="currentPage === totalPages - 1" type="button" class="btn-primary"
+              @click="submitForm">Enviar</button>
             <button v-else type="button" class="btn" @click="nextPage"
               :disabled="currentPage >= totalPages - 1">Próxima</button>
           </div>
@@ -125,6 +126,9 @@ function goToPage(i) {
 }
 
 function logout() {
+  localStorage.removeItem("auth_token")
+  localStorage.removeItem("user_role")
+
   showUserMenu.value = false
   emit('logout')
 }

@@ -32,9 +32,16 @@ function submit() {
     // placeholder: aqui você chamaria API de autenticação
     console.log('Login', email.value, password.value)
     if (email.value === 'admin@cptm.com' && password.value === 'admin123456') {
+
+        localStorage.setItem("auth_token", "fake_token_admin")
+        localStorage.setItem("user_role", "admin")
+
         // emitir evento para o pai para navegar ao Main
         emit('login-adm-success')
     } else if (email.value === 'user@cptm.com' && password.value === 'user123456') {
+
+        localStorage.setItem("auth_token", "fake_token_user")
+        localStorage.setItem("user_role", "user")
         // emitir evento para o pai para navegar ao Main
         emit('login-user-success')
 
@@ -46,7 +53,6 @@ function submit() {
 </script>
 
 <style scoped>
-
 .login-screen {
     position: fixed;
     inset: 0;

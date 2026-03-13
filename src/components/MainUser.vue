@@ -20,10 +20,12 @@
             <div v-if="modalVisible" class="modal-overlay" role="dialog" aria-modal="true">
                 <div class="modal">
                     <h3>{{ modalAction === 'delete' ? 'Confirmar exclusão' : 'Confirmar envio' }}</h3>
-                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} a inspeção "{{ modalTarget?.title }}"?</p>
+                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} a inspeção "{{
+                        modalTarget?.title }}"?</p>
                     <div class="modal-actions">
                         <button class="btn cancel" @click="cancelModal">Cancelar</button>
-                        <button v-if="modalAction == 'delete'" class="btn confirm delete" @click="confirmModal">Sim, apagar</button>
+                        <button v-if="modalAction == 'delete'" class="btn confirm delete" @click="confirmModal">Sim,
+                            apagar</button>
                         <button v-else class="btn confirm send" @click="confirmModal">Sim, enviar</button>
                     </div>
                 </div>
@@ -36,20 +38,24 @@
                         <div class="label">Abrir nova inspeção</div>
                     </button>
 
-                        <button class="quick-btn" :class="{ active: viewFilter === 'scheduled' }" @click="setFilter('scheduled')" :aria-pressed="viewFilter === 'scheduled'" aria-label="Inspeções agendadas">
-                            <div class="icon">📅</div>
-                            <div class="label">Inspeções agendadas</div>
-                        </button>
+                    <button class="quick-btn" :class="{ active: viewFilter === 'scheduled' }"
+                        @click="setFilter('scheduled')" :aria-pressed="viewFilter === 'scheduled'"
+                        aria-label="Inspeções agendadas">
+                        <div class="icon">📅</div>
+                        <div class="label">Inspeções agendadas</div>
+                    </button>
 
-                        <button class="quick-btn" :class="{ active: viewFilter === 'sent' }" @click="setFilter('sent')" :aria-pressed="viewFilter === 'sent'" aria-label="Inspeções enviadas">
-                            <div class="icon">📤</div>
-                            <div class="label">Inspeções enviadas</div>
-                        </button>
+                    <button class="quick-btn" :class="{ active: viewFilter === 'sent' }" @click="setFilter('sent')"
+                        :aria-pressed="viewFilter === 'sent'" aria-label="Inspeções enviadas">
+                        <div class="icon">📤</div>
+                        <div class="label">Inspeções enviadas</div>
+                    </button>
 
-                        <button class="quick-btn" :class="{ active: viewFilter === 'all' }" @click="setFilter('all')" :aria-pressed="viewFilter === 'all'" aria-label="Minhas inspeções">
-                            <div class="icon">📋</div>
-                            <div class="label">Minhas inspeções</div>
-                        </button>
+                    <button class="quick-btn" :class="{ active: viewFilter === 'all' }" @click="setFilter('all')"
+                        :aria-pressed="viewFilter === 'all'" aria-label="Minhas inspeções">
+                        <div class="icon">📋</div>
+                        <div class="label">Minhas inspeções</div>
+                    </button>
                 </div>
             </div>
 
@@ -64,11 +70,11 @@
                             <div class="mono">ID: {{ ins.id }}</div>
                         </div>
                         <div class="right">
-                                <div class="status">{{ ins.status }}</div>
-                                <button class="btn" @click="goToForm(ins)">Preencher Formulário</button>
-                                <button class="btn send" @click="confirmAction('send', ins)"
-                                    :disabled="ins.status === 'Enviado' || ins.status === 'Enviando...'">Enviar</button>
-                                <button class="btn ghost delete" @click="confirmAction('delete', ins)">Apagar</button>
+                            <div class="status">{{ ins.status }}</div>
+                            <button class="btn" @click="goToForm(ins)">Preencher Formulário</button>
+                            <button class="btn send" @click="confirmAction('send', ins)"
+                                :disabled="ins.status === 'Enviado' || ins.status === 'Enviando...'">Enviar</button>
+                            <button class="btn ghost delete" @click="confirmAction('delete', ins)">Apagar</button>
                         </div>
                     </div>
                 </section>
@@ -122,6 +128,9 @@ function deleteInspection(ins) {
 }
 
 function logout() {
+    localStorage.removeItem("auth_token")
+    localStorage.removeItem("user_role")
+
     showUserMenu.value = false
     emit('logout')
 }
@@ -314,18 +323,18 @@ function cancelModal() {
 
 .quick-btn:hover {
     transform: translateY(-4px);
-    box-shadow: 0 12px 26px rgba(183,28,28,0.22);
+    box-shadow: 0 12px 26px rgba(183, 28, 28, 0.22);
     background: linear-gradient(180deg, #ff5a5a, #9f1717);
 }
 
 .quick-btn.active {
-    outline: 3px solid rgba(183,28,28,0.12);
-    box-shadow: 0 10px 24px rgba(183,28,28,0.26);
+    outline: 3px solid rgba(183, 28, 28, 0.12);
+    box-shadow: 0 10px 24px rgba(183, 28, 28, 0.26);
     background: linear-gradient(180deg, #ff6b6b, #b71c1c);
 }
 
 .quick-btn:focus {
-    outline: 3px solid rgba(183,28,28,0.18);
+    outline: 3px solid rgba(183, 28, 28, 0.18);
 }
 
 /* Modal styles */
@@ -335,7 +344,7 @@ function cancelModal() {
     top: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.35);
+    background: rgba(0, 0, 0, 0.35);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -349,7 +358,7 @@ function cancelModal() {
     padding: 1rem 1.1rem;
     max-width: 480px;
     width: 100%;
-    box-shadow: 0 12px 36px rgba(0,0,0,0.18);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
 }
 
 .modal h3 {
@@ -591,7 +600,8 @@ h1 {
         padding: 0.55rem 0.65rem;
     }
 
-    .btn, .btn-primary {
+    .btn,
+    .btn-primary {
         padding: 0.55rem 0.7rem;
     }
 
@@ -629,7 +639,7 @@ h1 {
     .right .btn[disabled] {
         flex: 1 1 48%;
     }
-    
+
     /* make sure list container has some horizontal padding to avoid touching edges */
     .table-wrap {
         padding: 0 0.5rem;
