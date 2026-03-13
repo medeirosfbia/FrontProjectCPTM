@@ -72,6 +72,9 @@ import { ref, reactive, onMounted } from 'vue'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { useRouter, useRoute } from 'vue-router'
 import { computed } from 'vue'
+import { saveInspection } from '../services/db'
+import { getAllInspections } from '../services/db'
+import { watch } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -99,15 +102,44 @@ const form = reactive({
 })
 
 // carregar inspeção existente
-onMounted(() => {
-  if (!inspectionId) return
+onMounted(async () => {
 
-  const inspection = store.inspections.find(i => i.id === inspectionId)
+  const inspections = await getAllInspections()
+  store.inspections = inspections
+
+  if (inspectionId === "new") return
+
+  const inspection = inspections.find(i => i.id === inspectionId)
 
   if (inspection) {
     Object.assign(form, inspection)
   }
+
 })
+
+// ----------------------
+// Autosave
+// ----------------------
+let autosaveTimer = null
+
+watch(
+  form,
+  () => {
+
+    clearTimeout(autosaveTimer)
+
+    autosaveTimer = setTimeout(async () => {
+
+      await persistInspection("Não enviada")
+
+      status.value = "Salvo automaticamente"
+
+    }, 2000)
+
+  },
+  { deep: true }
+)
+
 
 
 // ----------------------
@@ -162,57 +194,57 @@ function goToPage(i) {
 // Salvar inspeção
 // ----------------------
 
-function submitForm() {
+async function submitForm() {
+
   if (!form.title && !form.location) {
-    status.value = 'Preencha ao menos Título ou Local.'
+    status.value = "Preencha ao menos Título ou Local."
     return
   }
 
-  status.value = 'Enviando...'
+  status.value = "Salvando..."
+
+  await persistInspection("Enviado")
+
+  status.value = "Enviado com sucesso"
 
   setTimeout(() => {
+    router.push("/main-user")
+  }, 600)
 
-    const payload = {
-      ...form,
-      id: form.id || ('i' + Date.now()),
-      status: 'Enviado'
-    }
-
-    const existingIndex = store.inspections.findIndex(i => i.id === payload.id)
-
-    if (existingIndex !== -1) {
-      store.inspections[existingIndex] = payload
-    } else {
-      store.inspections.push(payload)
-    }
-
-    status.value = 'Enviado com sucesso'
-
-    router.push('/main-user')
-
-  }, 800)
 }
 
+async function persistInspection(status = "rascunho") {
 
-function saveDraft() {
+  if (!form.id) {
+    form.id = "i" + Date.now()
+  }
 
   const payload = {
     ...form,
-    id: form.id || ('i' + Date.now()),
-    status: 'Não enviada'
+    status
   }
 
-  const existingIndex = store.inspections.findIndex(i => i.id === payload.id)
+  await saveInspection(payload)
 
-  if (existingIndex !== -1) {
-    store.inspections[existingIndex] = payload
+  const index = store.inspections.findIndex(i => i.id === payload.id)
+
+  if (index !== -1) {
+    store.inspections[index] = payload
   } else {
     store.inspections.push(payload)
   }
 
-  status.value = 'Rascunho salvo'
+}
 
-  router.push('/main-user')
+
+async function saveDraft() {
+
+  await persistInspection("Não enviada")
+
+  status.value = "Rascunho salvo"
+
+  router.push("/main-user")
+
 }
 
 

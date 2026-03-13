@@ -88,6 +88,27 @@ import { ref, computed } from 'vue'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
+import { onMounted } from 'vue'
+import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
+
+onMounted(async () => {
+
+    try {
+
+        const data = await getAllInspections()
+
+        // atualiza o store com dados persistidos
+        store.inspections = data
+
+    } catch (err) {
+
+        console.error("Erro ao carregar inspeções do IndexedDB", err)
+
+    }
+
+})
+
+
 
 const store = useInspectionStore() // ← usamos o store
 const { inspections } = storeToRefs(store) // ← pegamos as inspeções como refs reativas
@@ -97,7 +118,8 @@ const viewFilter = ref('all')
 const router = useRouter()
 
 // ✅ AGORA CRIA USANDO O STORE
-function createInspection(returnObj = false) {
+async function createInspection(returnObj = false) {
+
     const title =
         newTitle.value.trim() ||
         `Inspeção ${inspections.value.length + 1}`
@@ -108,16 +130,17 @@ function createInspection(returnObj = false) {
         status: 'Não enviada'
     }
 
-    store.inspections.push(ins) // ← mudou aqui
-    store.saveInspections?.()
+    await saveInspection(ins)
+
+    store.inspections.push(ins)
 
     newTitle.value = ''
+
     if (returnObj) return ins
 }
 
 function openNewInspection() {
-    const ins = createInspection(true)
-    goToForm(ins)
+    router.push('/form/new')
 }
 
 function sendInspection(ins) {
@@ -130,9 +153,20 @@ function goToForm(ins) {
     router.push(`/form/${ins.id}`)
 }
 
-function deleteInspection(ins) {
-    // ← agora remove do store
-    store.inspections = store.inspections.filter(i => i.id !== ins.id)
+async function deleteInspection(ins) {
+
+    try {
+
+        await deleteInspectionDB(ins.id)
+
+        store.inspections = store.inspections.filter(i => i.id !== ins.id)
+
+    } catch (err) {
+
+        console.error("Erro ao apagar inspeção", err)
+
+    }
+
 }
 
 function logout() {
