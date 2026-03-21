@@ -5,8 +5,7 @@ import { registerSW } from 'virtual:pwa-register'
 import router from './router'
 import './style.css'
 import App from './App.vue'
-
-initDB()
+import { initSync, syncInspections } from './services/sync'
 
 const app = createApp(App)
 registerSW({ immediate: true })
@@ -14,3 +13,18 @@ registerSW({ immediate: true })
 app.use(createPinia())
 app.use(router)
 app.mount('#app')
+
+async function boot() {
+	try {
+		await initDB()
+		initSync()
+		if (navigator.onLine) {
+			await syncInspections()
+		}
+	} catch (e) {
+		// keep offline functionality working
+		console.error('Bootstrap error:', e)
+	}
+}
+
+boot()

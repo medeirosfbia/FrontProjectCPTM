@@ -38,6 +38,10 @@ export async function saveInspection(data) {
 
     const database = await initDB()
 
+    if (!data.status) {
+        data.status = "Não enviada"
+    }
+
     return new Promise((resolve, reject) => {
 
         const tx = database.transaction(STORE_NAME, "readwrite")

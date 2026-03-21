@@ -71,9 +71,10 @@
                         </div>
                         <div class="right">
                             <div class="status">{{ ins.status }}</div>
-                            <button class="btn" @click="goToForm(ins)">Preencher Formulário</button>
+                            <button class="btn" @click="goToForm(ins)"
+                                :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede'">Continuar</button>
                             <button class="btn send" @click="confirmAction('send', ins)"
-                                :disabled="ins.status === 'Enviado' || ins.status === 'Enviando...'">Enviar</button>
+                                :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede'">Enviar</button>
                             <button class="btn ghost delete" @click="confirmAction('delete', ins)">Apagar</button>
                         </div>
                     </div>
@@ -90,6 +91,7 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { onMounted } from 'vue'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
+import { sendInspectionNow } from '../services/sync'
 
 onMounted(async () => {
 
@@ -143,10 +145,20 @@ function openNewInspection() {
     router.push('/form/new')
 }
 
-function sendInspection(ins) {
-    if (ins.status === 'Enviado' || ins.status === 'Enviando...') return
-    ins.status = 'Enviando...'
-    setTimeout(() => { ins.status = 'Enviado' }, 900)
+async function sendInspection(ins) {
+    const idx = store.inspections.findIndex(i => i.id === ins.id)
+    try {
+        const updated = await sendInspectionNow(ins)
+        if (idx >= 0) store.inspections[idx] = { ...updated }
+    } catch (e) {
+        try {
+            ins.status = 'Aguardando Rede'
+            await saveInspection(ins)
+            if (idx >= 0) store.inspections[idx] = { ...ins }
+        } catch (er) {
+            // swallow
+        }
+    }
 }
 
 function goToForm(ins) {

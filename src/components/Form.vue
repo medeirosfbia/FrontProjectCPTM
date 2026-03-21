@@ -74,6 +74,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { computed } from 'vue'
 import { saveInspection } from '../services/db'
 import { getAllInspections } from '../services/db'
+import { sendInspectionNow } from '../services/sync'
 import { watch } from 'vue'
 
 const router = useRouter()
@@ -203,17 +204,33 @@ async function submitForm() {
 
   status.value = "Salvando..."
 
-  await persistInspection("Enviado")
+  if (!form.id) form.id = "i" + Date.now()
 
-  status.value = "Enviado com sucesso"
+  const payload = { ...form }
+
+  // Try to send using centralized sync logic which persists status changes.
+  const result = await sendInspectionNow(payload)
+
+  // ensure store persistence
+  const index = store.inspections.findIndex(i => i.id === result.id)
+  if (index !== -1) store.inspections[index] = result
+  else store.inspections.push(result)
+
+  if (result.status === 'Enviado') {
+    status.value = 'Inspeção enviada com sucesso!'
+  } else if (result.status === 'Aguardando Rede') {
+    status.value = 'Sem conexão. A inspeção será enviada quando a rede estiver disponível.'
+  } else {
+    status.value = result.status || ''
+  }
 
   setTimeout(() => {
     router.push("/main-user")
-  }, 600)
+  }, 1000)
 
 }
 
-async function persistInspection(status = "rascunho") {
+async function persistInspection(status = "Rascunho") {
 
   if (!form.id) {
     form.id = "i" + Date.now()
