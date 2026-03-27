@@ -32,6 +32,7 @@
             </div>
 
             <div class="controls">
+                <div v-if="status" class="sync-message">{{ status }}</div>
                 <div class="quick-grid">
                     <button class="quick-btn" @click="openNewInspection" aria-label="Abrir nova inspeção">
                         <div class="icon">➕</div>
@@ -91,7 +92,8 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { onMounted } from 'vue'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
-import { sendInspectionNow } from '../services/sync'
+import { syncInspections } from '../services/sync'
+import { getToken } from '../services/api'
 
 onMounted(async () => {
 
@@ -145,19 +147,50 @@ function openNewInspection() {
     router.push('/form/new')
 }
 
+const status = ref('')
+
 async function sendInspection(ins) {
     const idx = store.inspections.findIndex(i => i.id === ins.id)
+
+    // persist as Aguardando Rede
     try {
-        const updated = await sendInspectionNow(ins)
-        if (idx >= 0) store.inspections[idx] = { ...updated }
+        ins.status = 'Aguardando Rede'
+        await saveInspection(ins)
+        if (idx >= 0) store.inspections[idx] = { ...ins }
     } catch (e) {
-        try {
-            ins.status = 'Aguardando Rede'
-            await saveInspection(ins)
-            if (idx >= 0) store.inspections[idx] = { ...ins }
-        } catch (er) {
-            // swallow
+        console.error('Erro ao persistir localmente', e)
+        status.value = 'Erro ao salvar localmente. Fica em Aguardando Rede.'
+        return
+    }
+
+    // if offline, notify and return
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        status.value = 'Sem conexão. Inspeção ficará em Aguardando Rede.'
+        return
+    }
+
+    // require auth
+    const token = getToken()
+    if (!token) {
+        status.value = 'Usuário não autenticado. Faça login para sincronizar.'
+        return
+    }
+
+    // attempt sync
+    status.value = 'Sincronizando...'
+    try {
+        await syncInspections()
+
+        // if inspection was removed from store, it means success
+        const exists = store.inspections.find(i => i.id === ins.id)
+        if (!exists) {
+            status.value = 'Inspeção sincronizada com sucesso!'
+        } else {
+            status.value = 'Inspeção permanece em Aguardando Rede.'
         }
+    } catch (e) {
+        console.error('Erro ao sincronizar', e)
+        status.value = 'Erro na sincronização. Inspeção ficará em Aguardando Rede.'
     }
 }
 
@@ -275,6 +308,15 @@ function cancelModal() {
     display: flex;
     align-items: center;
     gap: 1rem;
+}
+
+.sync-message {
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: #d1ecf1;
+    color: #0c5460;
+    border-radius: 8px;
+    font-weight: 600;
 }
 
 .header-left {

@@ -6,6 +6,7 @@ import router from './router'
 import './style.css'
 import App from './App.vue'
 import { initSync, syncInspections } from './services/sync'
+import { getToken } from './services/api'
 
 const app = createApp(App)
 registerSW({ immediate: true })
@@ -19,7 +20,8 @@ async function boot() {
 		await initDB()
 		initSync()
 		if (navigator.onLine) {
-			await syncInspections()
+			const token = getToken()
+			if (token) await syncInspections()
 		}
 	} catch (e) {
 		// keep offline functionality working

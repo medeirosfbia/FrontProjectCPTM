@@ -15,6 +15,7 @@
                     </label>
                     <button class="btn-primary" type="submit">Entrar</button>
                 </form>
+                <div v-if="error" class="form-error">{{ error }}</div>
                 <p class="muted">CPTM + FATEC - Projeto de demonstração</p>
             </div>
         </div>
@@ -24,32 +25,26 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { login } from '../services/api'
 
 const router = useRouter()
 const email = ref('')
 const password = ref('')
+const error = ref('')
 
-function submit() {
-    // placeholder: aqui você chamaria API de autenticação
-    console.log('Login', email.value, password.value)
-    if (email.value === 'admin@cptm.com' && password.value === 'admin123456') {
-
-        localStorage.setItem("auth_token", "fake_token_admin")
-        localStorage.setItem("user_role", "admin")
-
-        // router para navegar ao Main admin
-        router.push('/main-admin')
-    } else if (email.value === 'user@cptm.com' && password.value === 'user123456') {
-
-        localStorage.setItem("auth_token", "fake_token_user")
-        localStorage.setItem("user_role", "user")
-        // router para navegar ao Main user
-        router.push('/main-user')
-
-    } else {
-        alert('Credenciais inválidas ou ausentes.')
+async function submit() {
+    error.value = ''
+    try {
+        const res = await login(email.value, password.value)
+        const role = res?.role || res?.data?.role || localStorage.getItem('user_role') || 'user'
+        if (role === 'admin') router.push('/main-admin')
+        else router.push('/main-user')
+    } catch (err) {
+        console.error(err)
+        error.value = err.message || 'Falha no login'
+        // auto-clear after a short delay
+        setTimeout(() => { error.value = '' }, 5000)
     }
-
 }
 </script>
 
@@ -135,5 +130,11 @@ input {
         padding: 1.25rem;
         border-radius: 10px;
     }
+}
+
+.form-error {
+    margin-top: 0.75rem;
+    color: #b71c1c;
+    font-weight: 600;
 }
 </style>

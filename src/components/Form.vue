@@ -60,7 +60,7 @@
             <button type="button" class="btn ghost" @click="cancel">Cancelar</button>
           </div>
 
-          <div class="status" v-if="status">{{ status }}</div>
+          <div v-if="status" :class="['status', statusType]">{{ status }}</div>
         </form>
       </div>
     </div>
@@ -74,7 +74,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { computed } from 'vue'
 import { saveInspection } from '../services/db'
 import { getAllInspections } from '../services/db'
-import { sendInspectionNow } from '../services/sync'
+import { syncInspections } from '../services/sync'
+import { getToken } from '../services/api'
 import { watch } from 'vue'
 
 const router = useRouter()
@@ -83,6 +84,18 @@ const store = useInspectionStore()
 
 const showUserMenu = ref(false)
 const status = ref('')
+const statusType = ref('') // 'success' | 'error' | 'info' | 'warning'
+
+function setStatus(msg = '', type = 'info', duration = 3000) {
+  status.value = msg
+  statusType.value = type
+  if (duration > 0 && msg) {
+    setTimeout(() => {
+      status.value = ''
+      statusType.value = ''
+    }, duration)
+  }
+}
 
 // pegar id da rota
 const inspectionId = route.params.id
@@ -131,9 +144,17 @@ watch(
 
     autosaveTimer = setTimeout(async () => {
 
+      // If this inspection is already marked as Aguardando Rede in the store,
+      // do not overwrite it back to 'Não enviada' (this would block sending).
+      const existing = store.inspections.find(i => i.id === form.id)
+      if (existing && existing.status === 'Aguardando Rede') {
+        // keep awaiting status
+        return
+      }
+
       await persistInspection("Não enviada")
 
-      status.value = "Salvo automaticamente"
+      setStatus('Salvo automaticamente', 'success', 2500)
 
     }, 2000)
 
@@ -196,37 +217,48 @@ function goToPage(i) {
 // ----------------------
 
 async function submitForm() {
+  // avoid autosave racing with submit
+  clearTimeout(autosaveTimer)
 
   if (!form.title && !form.location) {
-    status.value = "Preencha ao menos Título ou Local."
+    setStatus('Preencha ao menos Título ou Local.', 'error', 4000)
     return
   }
 
-  status.value = "Salvando..."
+  setStatus('Salvando...', 'info', 0)
 
   if (!form.id) form.id = "i" + Date.now()
 
-  const payload = { ...form }
+  // persist as awaiting network (blocked until sync runs)
+  await persistInspection('Aguardando Rede')
 
-  // Try to send using centralized sync logic which persists status changes.
-  const result = await sendInspectionNow(payload)
-
-  // ensure store persistence
-  const index = store.inspections.findIndex(i => i.id === result.id)
-  if (index !== -1) store.inspections[index] = result
-  else store.inspections.push(result)
-
-  if (result.status === 'Enviado') {
-    status.value = 'Inspeção enviada com sucesso!'
-  } else if (result.status === 'Aguardando Rede') {
-    status.value = 'Sem conexão. A inspeção será enviada quando a rede estiver disponível.'
-  } else {
-    status.value = result.status || ''
+  // if offline, notify user and return
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    setStatus('Sem conexão. A inspeção ficará em Aguardando Rede.', 'warning', 5000)
+    setTimeout(() => router.push('/main-user'), 1000)
+    return
   }
 
-  setTimeout(() => {
-    router.push("/main-user")
-  }, 1000)
+  // only attempt sync when authenticated
+  const token = getToken()
+  if (!token) {
+    setStatus('Não autenticado. Faça login para sincronizar.', 'error', 4000)
+    setTimeout(() => router.push('/login'), 1000)
+    return
+  }
+
+  // attempt synchronization (this will upload 'Aguardando Rede' items and fetch server items)
+  await syncInspections()
+
+  // after sync, check whether this inspection was removed from local store (means success)
+  const exists = store.inspections.find(i => i.id === form.id)
+  if (!exists) {
+    setStatus('Inspeção enviada com sucesso!', 'success', 2500)
+  } else {
+    setStatus('Inspeção permanece em Aguardando Rede.', 'warning', 5000)
+  }
+
+  setTimeout(() => router.push('/main-user'), 1200)
 
 }
 
@@ -258,7 +290,7 @@ async function saveDraft() {
 
   await persistInspection("Não enviada")
 
-  status.value = "Rascunho salvo"
+  setStatus('Rascunho salvo', 'success', 2000)
 
   router.push("/main-user")
 
@@ -432,6 +464,11 @@ textarea {
   color: #444;
   font-weight: 600
 }
+
+.status.success { color: #155724; background: #d4edda; padding: 0.45rem 0.6rem; border-radius: 6px }
+.status.error { color: #721c24; background: #f8d7da; padding: 0.45rem 0.6rem; border-radius: 6px }
+.status.info { color: #0c5460; background: #d1ecf1; padding: 0.45rem 0.6rem; border-radius: 6px }
+.status.warning { color: #856404; background: #fff3cd; padding: 0.45rem 0.6rem; border-radius: 6px }
 
 @media (max-width:720px) {
   .row.two {
