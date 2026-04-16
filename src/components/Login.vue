@@ -2,12 +2,12 @@
     <div class="container">
         <div class="login-screen">
             <div class="card">
-                <img src="../assets/cptm_logo.png" alt="CPTM" class="logo" />
-                <h2>Entrar</h2>
+                <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
+                <h2>Boas-vindas!</h2>
                 <form @submit.prevent="submit">
                     <label class="field">
                         <span>Email</span>
-                        <input v-model="email" type="email" required placeholder="seu@exemplo.com" />
+                        <input v-model="email" type="email" required placeholder="user@cptm.team" />
                     </label>
                     <label class="field">
                         <span>Senha</span>
@@ -16,7 +16,6 @@
                     <button class="btn-primary" type="submit">Entrar</button>
                 </form>
                 <div v-if="error" class="form-error">{{ error }}</div>
-                <p class="muted">CPTM + FATEC - Projeto de demonstração</p>
             </div>
         </div>
     </div>
@@ -55,7 +54,7 @@ async function submit() {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(180deg, #f7f7f8, #ffd5d5);
+    background: #ffff;
     z-index: 9999;
 }
 
@@ -65,12 +64,11 @@ async function submit() {
     background: #fff;
     border-radius: 12px;
     padding: 2rem;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06);
     text-align: center;
 }
 
 .logo {
-    width: 140px;
+    width: 100px;
     height: auto;
     margin: 0 auto 0.75rem;
     filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.06));
@@ -78,7 +76,7 @@ async function submit() {
 
 h2 {
     margin: 0 0 1rem;
-    color: #222;
+    color: #606060;
 }
 
 .field {
@@ -96,10 +94,18 @@ h2 {
 
 input {
     width: 100%;
+    background-color: #e6e6e9;
+    font-weight: bolder;
     padding: 0.65rem 0.75rem;
+    color: #606060;
     border-radius: 8px;
     border: 1px solid #e6e6e9;
     font-size: 1rem;
+}
+
+input:focus {
+  outline: none;
+  border: 1px solid #ccc; 
 }
 
 .btn-primary {
@@ -108,7 +114,7 @@ input {
     padding: 0.75rem;
     border-radius: 10px;
     border: none;
-    background: #b71c1c;
+    background: #ee3338;
     color: #fff;
     font-weight: 600;
     cursor: pointer;
@@ -137,4 +143,5 @@ input {
     color: #b71c1c;
     font-weight: 600;
 }
+
 </style>

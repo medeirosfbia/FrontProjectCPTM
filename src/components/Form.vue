@@ -56,7 +56,7 @@
 
           <!-- Actions: submit on last page, otherwise Next also available -->
           <div class="actions">
-            <button type="button" class="btn" @click="saveDraft">Salvar rascunho</button>
+            <button type="button" class="btn draw" @click="saveDraft">Salvar rascunho</button>
             <button type="button" class="btn ghost" @click="cancel">Cancelar</button>
           </div>
 
@@ -315,7 +315,7 @@ function logout() {
 .container {
   min-height: 100vh;
   width: 100%;
-  background: linear-gradient(180deg, #f7f7f8, #ffd5d5);
+  background: #fff;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -328,7 +328,6 @@ function logout() {
   background: #fff;
   border-radius: 12px;
   padding: 1.25rem 1.5rem;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
   gap: 1rem
@@ -421,12 +420,41 @@ label {
   margin-bottom: 0.4rem
 }
 
-input,
-textarea {
-  padding: 0.6rem 0.8rem;
+input {
+  width: 100%;
+  background-color: #f5f5f5;
+  font-weight: bolder;
+  padding: 0.65rem 0.75rem;
+  color: #606060;
   border-radius: 8px;
-  border: 1px solid #eee;
-  font-size: 0.95rem
+  border: 1px solid #e6e6e9;
+  font-size: 1rem;
+}
+
+input:focus {
+  outline: none;
+  border: 1px solid #ccc;
+}
+
+textarea {
+  width: 100%;
+  background-color: #f5f5f5;
+  font-weight: bolder;
+  padding: 0.65rem 0.75rem;
+  color: #606060;
+  border-radius: 8px;
+  border: 1px solid #e6e6e9;
+  font-size: 1rem;
+}
+
+textarea:focus {
+  outline: none;
+  border: 1px solid #ccc;
+}
+
+.btn:focus {
+  outline: none;
+  border: 1px solid #ccc;
 }
 
 .actions {
@@ -436,12 +464,13 @@ textarea {
 }
 
 .btn-primary {
-  background: #0b79ff;
+  background: #097a5e;
   color: #fff;
   border: none;
   padding: 0.6rem 0.9rem;
   border-radius: 8px;
-  cursor: pointer
+  cursor: pointer;
+  width: 100%;
 }
 
 .btn {
@@ -453,10 +482,14 @@ textarea {
   color: #333
 }
 
+.btn.draw {
+  color: #f7f7f8;
+  background: #929288;
+}
+
 .btn.ghost {
   color: #f7f7f8;
-  background: #b60c0c;
-  border: 1px solid #8b8b8b
+  background: #ee3338;
 }
 
 .status {
@@ -465,10 +498,33 @@ textarea {
   font-weight: 600
 }
 
-.status.success { color: #155724; background: #d4edda; padding: 0.45rem 0.6rem; border-radius: 6px }
-.status.error { color: #721c24; background: #f8d7da; padding: 0.45rem 0.6rem; border-radius: 6px }
-.status.info { color: #0c5460; background: #d1ecf1; padding: 0.45rem 0.6rem; border-radius: 6px }
-.status.warning { color: #856404; background: #fff3cd; padding: 0.45rem 0.6rem; border-radius: 6px }
+.status.success {
+  color: #155724;
+  background: #d4edda;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px
+}
+
+.status.error {
+  color: #721c24;
+  background: #f8d7da;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px
+}
+
+.status.info {
+  color: #0c5460;
+  background: #d1ecf1;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px
+}
+
+.status.warning {
+  color: #856404;
+  background: #fff3cd;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px
+}
 
 @media (max-width:720px) {
   .row.two {
@@ -489,6 +545,11 @@ textarea {
   margin: 0.5rem 0
 }
 
+.pagination.arrows {
+  justify-content: center;
+  gap: 0.6rem;
+}
+
 .page-buttons {
   display: flex;
   gap: 0.4rem;
@@ -505,7 +566,7 @@ textarea {
 }
 
 .page-btn.active {
-  background: #b71c1c;
+  background: #097a5e;
   color: #fff;
   border-color: transparent
 }
@@ -516,9 +577,14 @@ textarea {
     gap: 0.5rem
   }
 
+  .pagination.arrows {
+    flex-direction: row;
+    justify-content: center;
+    gap: 0.6rem;
+  }
+
   .page-buttons {
     width: 100%;
-    justify-content: flex-start;
     overflow-x: auto
   }
 

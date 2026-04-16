@@ -6,7 +6,6 @@
                     <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
                     <div class="header-info">
                         <h1>Inspeções</h1>
-                        <p class="subtitle">CPTM + FATEC</p>
                     </div>
                 </div>
                 <div class="user-area">
@@ -34,27 +33,27 @@
             <div class="controls">
                 <div v-if="status" class="sync-message">{{ status }}</div>
                 <div class="quick-grid">
-                    <button class="quick-btn" @click="openNewInspection" aria-label="Abrir nova inspeção">
-                        <div class="icon">➕</div>
+                    <button class="quick-btn green" @click="openNewInspection" aria-label="Abrir nova inspeção">
+                        <Plus :size="28" />
                         <div class="label">Abrir nova inspeção</div>
                     </button>
 
-                    <button class="quick-btn" :class="{ active: viewFilter === 'scheduled' }"
+                    <button class="quick-btn yellow" :class="{ active: viewFilter === 'scheduled' }"
                         @click="setFilter('scheduled')" :aria-pressed="viewFilter === 'scheduled'"
                         aria-label="Inspeções agendadas">
-                        <div class="icon">📅</div>
+                        <Calendar :size="28" />
                         <div class="label">Inspeções agendadas</div>
                     </button>
 
-                    <button class="quick-btn" :class="{ active: viewFilter === 'sent' }" @click="setFilter('sent')"
+                    <button class="quick-btn blue" :class="{ active: viewFilter === 'sent' }" @click="setFilter('sent')"
                         :aria-pressed="viewFilter === 'sent'" aria-label="Inspeções enviadas">
-                        <div class="icon">📤</div>
+                        <Send :size="28" />
                         <div class="label">Inspeções enviadas</div>
                     </button>
 
-                    <button class="quick-btn" :class="{ active: viewFilter === 'all' }" @click="setFilter('all')"
+                    <button class="quick-btn red" :class="{ active: viewFilter === 'all' }" @click="setFilter('all')"
                         :aria-pressed="viewFilter === 'all'" aria-label="Minhas inspeções">
-                        <div class="icon">📋</div>
+                        <ClipboardList :size="28" />
                         <div class="label">Minhas inspeções</div>
                     </button>
                 </div>
@@ -72,7 +71,7 @@
                         </div>
                         <div class="right">
                             <div class="status">{{ ins.status }}</div>
-                            <button class="btn" @click="goToForm(ins)"
+                            <button class="btn continue" @click="goToForm(ins)"
                                 :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede'">Continuar</button>
                             <button class="btn send" @click="confirmAction('send', ins)"
                                 :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede'">Enviar</button>
@@ -94,6 +93,7 @@ import { onMounted } from 'vue'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
 import { syncInspections } from '../services/sync'
 import { getToken } from '../services/api'
+import { Plus, Calendar, Send, ClipboardList, LogOut, User } from 'lucide-vue-next'
 
 onMounted(async () => {
 
@@ -282,7 +282,7 @@ function cancelModal() {
 .container {
     min-height: 100vh;
     width: 100%;
-    background: linear-gradient(180deg, #f7f7f8, #ffd5d5);
+    background: #fff;
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -297,7 +297,6 @@ function cancelModal() {
     background: #fff;
     border-radius: 12px;
     padding: 1.25rem 1.5rem;
-    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -362,7 +361,7 @@ function cancelModal() {
     top: 48px;
     background: #fff;
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 8px 24px #626262;
     padding: 0.35rem;
     min-width: 110px
 }
@@ -399,11 +398,11 @@ function cancelModal() {
     gap: 0.5rem;
     padding: 1.15rem;
     border-radius: 12px;
-    background: linear-gradient(180deg, #b71c1c, #8f1616);
+    background-color: #dc1c22;
     color: #fff;
     border: none;
     cursor: pointer;
-    box-shadow: 0 6px 18px rgba(183, 28, 28, 0.18);
+    box-shadow: 0 6px 18px #ccc;
     min-height: 88px;
     text-align: center;
 }
@@ -419,19 +418,21 @@ function cancelModal() {
 
 .quick-btn:hover {
     transform: translateY(-4px);
-    box-shadow: 0 12px 26px rgba(183, 28, 28, 0.22);
-    background: linear-gradient(180deg, #ff5a5a, #9f1717);
+    box-shadow: 0 12px 26px #ccc;
 }
 
 .quick-btn.active {
-    outline: 3px solid rgba(183, 28, 28, 0.12);
-    box-shadow: 0 10px 24px rgba(183, 28, 28, 0.26);
-    background: linear-gradient(180deg, #ff6b6b, #b71c1c);
+    box-shadow: 0 10px 24px #ccc;
 }
 
 .quick-btn:focus {
-    outline: 3px solid rgba(183, 28, 28, 0.18);
+    outline: 3px solid #ccc;
 }
+
+.quick-btn.green  { background-color: #097a5e; }
+.quick-btn.yellow { background-color: #f2c036; }
+.quick-btn.blue   { background-color: #2b5c9e; }
+.quick-btn.red { background-color: #de221d; }
 
 /* Modal styles */
 .modal-overlay {
@@ -480,11 +481,11 @@ function cancelModal() {
 }
 
 .modal-actions .btn.send {
-    background: #419b05;
+    background: #097a5e;
 }
 
 .modal-actions .btn.delete {
-    background: #b71c1c;
+    background: #ca1616;
 }
 
 
@@ -522,7 +523,7 @@ function cancelModal() {
 }
 
 .btn-primary {
-    background: #b71c1c;
+    background: #ca1616;
     color: #fff;
     border: none;
     padding: 0.6rem 0.9rem;
@@ -583,6 +584,21 @@ h1 {
     background: #fff;
     cursor: pointer;
     color: #333
+}
+
+.btn.continue {
+    background: #929288;
+    color: #fff
+}
+
+.btn.send {
+    background: #2b5c9e;
+    color: #fff
+}
+
+.btn.ghost.delete {
+    background: #de221d;
+    color: #fff
 }
 
 .btn.ghost {
