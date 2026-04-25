@@ -304,6 +304,7 @@ function cancel() {
 function logout() {
   localStorage.removeItem("auth_token")
   localStorage.removeItem("user_role")
+  localStorage.removeItem("user_is_admin")
 
   showUserMenu.value = false
   router.push('/login')

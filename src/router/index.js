@@ -5,7 +5,7 @@ import MainAdm from '../components/MainAdm.vue'
 import MainUser from '../components/MainUser.vue'
 import Form from '../components/Form.vue'
 import UserCreation from '../components/UserCreation.vue'
-import { getToken } from '../services/api'
+import { getIsAdmin, getToken } from '../services/api'
 
 const routes = [
   { path: '/', component: Splash },
@@ -23,9 +23,14 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const token = getToken()
+  const isAdmin = getIsAdmin()
 
   // If navigating to login while already authenticated, redirect to main
   if (to.path === '/login' && token) {
+    return next(isAdmin ? '/main-admin' : '/main-user')
+  }
+
+  if (to.path === '/main-admin' && token && !isAdmin) {
     return next('/main-user')
   }
 

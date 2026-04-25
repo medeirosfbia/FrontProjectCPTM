@@ -21,8 +21,6 @@
                         <span class="checkbox-title">Tipo de Usuário</span>
                         <span class="checkbox-label">Administrador</span>
                         <input v-model="isAdmin" type="checkbox" class="checkbox-input" />
-                        <span class="checkbox-label">Usuário Comum</span>
-                        <input v-model="isUser" type="checkbox" class="checkbox-input" />
                     </label>
                     <label class="field">
                         <span>Senha</span>
@@ -31,6 +29,7 @@
                     <button class="btn-primary" type="submit">Cadastrar</button>
                     <button class="btn ghost" type="button" @click="cancel">Cancelar</button>
                 </form>
+                <div v-if="error" class="form-error">{{ error }}</div>
                 <p class="muted">CPTM + FATEC - Projeto de demonstração</p>
             </div>
         </div>
@@ -40,6 +39,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { apiFetch } from '../services/api'
 
 const router = useRouter()
 const name = ref('')
@@ -47,18 +47,29 @@ const email = ref('')
 const password = ref('')
 const birthDate = ref('')
 const isAdmin = ref(false)
-const isUser = ref(false)
+const error = ref('')
 
 
-function submit() {
-    // placeholder: aqui você chamaria API de autenticação
-    console.log('Login',name.value, email.value, password.value, birthDate.value, isAdmin.value, isUser.value)
-    if (!isAdmin.value && !isUser.value) {
-        alert('Selecione pelo menos um tipo de usuário.')
-        return
+async function submit() {
+    error.value = ''
+
+    try {
+        await apiFetch('/Usuarios/register', {
+            method: 'POST',
+            body: {
+                nomeCompleto: name.value,
+                email: email.value,
+                dataNascimento: birthDate.value,
+                senha: password.value,
+                isAdmin: isAdmin.value
+            }
+        })
+
+        router.push('/main-admin')
+    } catch (err) {
+        console.error(err)
+        error.value = err.message || 'Falha ao cadastrar usuário'
     }
-    router.push('/main-admin')
-
 }
 
 function cancel() {
@@ -152,6 +163,12 @@ input {
     width: 16px;
     height: 16px;
     cursor: pointer;
+}
+
+.form-error {
+    margin-top: 0.75rem;
+    color: #b71c1c;
+    font-weight: 600;
 }
 
 .btn-primary {

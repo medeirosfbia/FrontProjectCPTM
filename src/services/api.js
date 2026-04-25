@@ -4,9 +4,97 @@ export function getToken() {
   return localStorage.getItem('auth_token') || null
 }
 
+function decodeJwtPayload(token) {
+  if (!token || typeof token !== 'string') return null
+
+  const parts = token.split('.')
+  if (parts.length < 2) return null
+
+  try {
+    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4)
+    const json = atob(padded)
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
+function roleClaimToIsAdmin(role) {
+  if (Array.isArray(role)) {
+    return role.some((r) => String(r).toLowerCase().trim() === 'admin')
+  }
+
+  return String(role || '').toLowerCase().trim() === 'admin'
+}
+
+function inferIsAdmin(res, token) {
+  const role = res?.role || res?.data?.role
+  const isAdminRaw = res?.isAdmin ?? res?.data?.isAdmin
+
+  if (typeof isAdminRaw === 'boolean') return isAdminRaw
+  if (typeof isAdminRaw === 'string') return isAdminRaw.toLowerCase().trim() === 'true'
+  if (role) return roleClaimToIsAdmin(role)
+
+  const payload = decodeJwtPayload(token)
+  if (!payload) return null
+
+  // ASP.NET JWT often maps role to this URI claim.
+  const claimRole = payload.role
+    ?? payload.roles
+    ?? payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role']
+
+  if (claimRole != null) return roleClaimToIsAdmin(claimRole)
+
+  const claimIsAdmin = payload.isAdmin ?? payload.IsAdmin
+  if (typeof claimIsAdmin === 'boolean') return claimIsAdmin
+  if (typeof claimIsAdmin === 'string') return claimIsAdmin.toLowerCase().trim() === 'true'
+
+  return null
+}
+
+export function getIsAdmin() {
+  const fromFlag = (localStorage.getItem('user_is_admin') || '').toLowerCase().trim()
+  if (fromFlag === 'true') return true
+  if (fromFlag === 'false') return false
+
+  const fromRole = (localStorage.getItem('user_role') || '').toLowerCase().trim()
+  if (fromRole === 'admin') return true
+  if (fromRole === 'user') return false
+
+  const token = getToken()
+  const payload = decodeJwtPayload(token)
+  if (!payload) return false
+
+  const claimRole = payload.role
+    ?? payload.roles
+    ?? payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role']
+
+  if (claimRole != null) {
+    const byRole = roleClaimToIsAdmin(claimRole)
+    localStorage.setItem('user_is_admin', String(byRole))
+    localStorage.setItem('user_role', byRole ? 'admin' : 'user')
+    return byRole
+  }
+
+  const claimIsAdmin = payload.isAdmin ?? payload.IsAdmin
+  if (typeof claimIsAdmin === 'boolean' || typeof claimIsAdmin === 'string') {
+    const byFlag = typeof claimIsAdmin === 'boolean'
+      ? claimIsAdmin
+      : claimIsAdmin.toLowerCase().trim() === 'true'
+
+    localStorage.setItem('user_is_admin', String(byFlag))
+    localStorage.setItem('user_role', byFlag ? 'admin' : 'user')
+    return byFlag
+  }
+
+  return false
+}
+
 export function logout() {
   localStorage.removeItem('auth_token')
   localStorage.removeItem('user_role')
+  localStorage.removeItem('user_is_admin')
 }
 
 /**
@@ -64,9 +152,12 @@ export async function login(email, password) {
 
   localStorage.setItem('auth_token', token)
 
-  // save role if provided by backend
-  if (res?.role) localStorage.setItem('user_role', res.role)
-  if (res?.data?.role) localStorage.setItem('user_role', res.data.role)
+  const isAdmin = inferIsAdmin(res, token)
+
+  if (isAdmin !== null) {
+    localStorage.setItem('user_is_admin', String(isAdmin))
+    localStorage.setItem('user_role', isAdmin ? 'admin' : 'user')
+  }
 
   return res
 }
@@ -93,6 +184,7 @@ export default {
   login,
   logout,
   getToken,
+  getIsAdmin,
   createInspectionAPI,
   getInspectionsAPI,
   updateInspectionAPI,

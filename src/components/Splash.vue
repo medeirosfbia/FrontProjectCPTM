@@ -11,6 +11,7 @@
 <script setup>
 import { onMounted } from "vue"
 import { useRouter } from "vue-router"
+import { getIsAdmin } from "../services/api"
 
 const router = useRouter()
 
@@ -20,15 +21,15 @@ onMounted(async () => {
     await new Promise(resolve => setTimeout(resolve, 2000))
 
     const token = localStorage.getItem("auth_token")
-    const role = localStorage.getItem("user_role")
+    const isAdmin = getIsAdmin()
 
     if (!token) {
         router.replace("/login")
     }
-    else if (role === "admin") {
+    else if (isAdmin) {
         router.replace("/main-admin")
     }
-    else if (role === "user") {
+    else {
         router.replace("/main-user")
     }
 

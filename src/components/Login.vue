@@ -24,7 +24,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { login } from '../services/api'
+import { getIsAdmin, login } from '../services/api'
 
 const router = useRouter()
 const email = ref('')
@@ -34,9 +34,10 @@ const error = ref('')
 async function submit() {
     error.value = ''
     try {
-        const res = await login(email.value, password.value)
-        const role = res?.role || res?.data?.role || localStorage.getItem('user_role') || 'user'
-        if (role === 'admin') router.push('/main-admin')
+        await login(email.value, password.value)
+        const isAdmin = getIsAdmin()
+
+        if (isAdmin) router.push('/main-admin')
         else router.push('/main-user')
     } catch (err) {
         console.error(err)
