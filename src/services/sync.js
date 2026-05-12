@@ -57,12 +57,15 @@ export async function sendInspectionNow(inspection) {
         // if serverId exists, try update, else create
         let serverRes = null
         try {
+            console.log('Enviando payload para a API:', payload)
             if (inspection.serverId) {
                 serverRes = await updateInspectionAPI(inspection.serverId, payload)
             } else {
                 serverRes = await createInspectionAPI(payload)
             }
+            console.log('Resposta sucesso da API:', serverRes)
         } catch (err) {
+            console.error('Erro de rede ou da API ao enviar inspeção:', err)
             // network/server error: mark as awaiting network
             inspection.status = 'Aguardando Rede'
             try { await saveInspection(inspection) } catch (e) { /* ignore */ }
@@ -195,3 +198,4 @@ export default {
     initSync,
     syncState
 }
+

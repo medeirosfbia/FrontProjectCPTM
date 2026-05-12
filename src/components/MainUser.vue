@@ -46,7 +46,7 @@
                     </button>
 
                     <button class="quick-btn blue" :class="{ active: viewFilter === 'sent' }" @click="setFilter('sent')"
-                        :aria-pressed="viewFilter === 'sent'" aria-label="Inspeções enviadas">
+                        aria-label="Inspeções enviadas">
                         <Send :size="28" />
                         <div class="label">Inspeções enviadas</div>
                     </button>
@@ -60,22 +60,23 @@
             </div>
 
             <div class="table-wrap">
-                <div v-if="!filteredInspections.length" class="notice">Nenhuma inspeção neste filtro.</div>
+                <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhuma inspeção neste filtro.</div>
+                <div v-if="loadingApi" class="notice" style="color:blue;">Sincronizando com o banco de dados...</div>
 
                 <section v-if="filteredInspections.length" class="list">
                     <h2>Inspeções ({{ filteredInspections.length }})</h2>
                     <div v-for="ins in filteredInspections" :key="ins.id" class="inspection">
                         <div class="left">
-                            <strong class="inspection-title">{{ ins.title }}</strong>
+                            <strong class="inspection-title">{{ ins.title || ins.titulo || 'Sem título' }}</strong>
                             <div class="mono">ID: {{ ins.id }}</div>
                         </div>
                         <div class="right">
-                            <div class="status">{{ ins.status }}</div>
+                            <div class="status">{{ ins.status || 'Enviado' }}</div>
                             <button class="btn continue" @click="goToForm(ins)"
-                                :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede'">Continuar</button>
+                                :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede' || viewFilter === 'sent'">Continuar</button>
                             <button class="btn send" @click="confirmAction('send', ins)"
-                                :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede'">Enviar</button>
-                            <button class="btn ghost delete" @click="confirmAction('delete', ins)">Apagar</button>
+                                :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede' || viewFilter === 'sent'">Enviar</button>
+                            <button class="btn ghost delete" @click="confirmAction('delete', ins)" v-if="viewFilter !== 'sent'">Apagar</button>
                         </div>
                     </div>
                 </section>
@@ -92,26 +93,24 @@ import { useRouter } from 'vue-router'
 import { onMounted } from 'vue'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
 import { syncInspections } from '../services/sync'
-import { getToken } from '../services/api'
+import { getToken, getInspectionsAPI } from '../services/api'
 import { Plus, Calendar, Send, ClipboardList, LogOut, User } from 'lucide-vue-next'
 
 onMounted(async () => {
-
     try {
-
         const data = await getAllInspections()
+        const currentUser = localStorage.getItem('user_email')
 
-        // atualiza o store com dados persistidos
-        store.inspections = data
+        const minhasInspecoes = data.filter(i => {
+            return i.userEmail === currentUser
+        })
+
+        store.inspections = minhasInspecoes
 
     } catch (err) {
-
         console.error("Erro ao carregar inspeções do IndexedDB", err)
-
     }
-
 })
-
 
 
 const store = useInspectionStore() // ← usamos o store
@@ -120,6 +119,8 @@ const newTitle = ref('')
 const showUserMenu = ref(false)
 const viewFilter = ref('all')
 const router = useRouter()
+const sentApiData = ref([])
+const loadingApi = ref(false)
 
 // ✅ AGORA CRIA USANDO O STORE
 async function createInspection(returnObj = false) {
@@ -131,7 +132,8 @@ async function createInspection(returnObj = false) {
     const ins = {
         id: 'i' + Date.now(),
         title,
-        status: 'Não enviada'
+        status: 'Não enviada',
+        userEmail: localStorage.getItem('user_email') || ''
     }
 
     await saveInspection(ins)
@@ -145,6 +147,10 @@ async function createInspection(returnObj = false) {
 
 function openNewInspection() {
     router.push('/form/new')
+}
+
+function goToSentInspections() {
+    router.push('/sent-inspections')
 }
 
 const status = ref('')
@@ -177,20 +183,19 @@ async function sendInspection(ins) {
     }
 
     // attempt sync
-    status.value = 'Sincronizando...'
+    status.value = 'Sincronizando com o Back-end...'
     try {
         await syncInspections()
 
-        // if inspection was removed from store, it means success
         const exists = store.inspections.find(i => i.id === ins.id)
         if (!exists) {
-            status.value = 'Inspeção sincronizada com sucesso!'
+            status.value = 'Inspeção enviada e salva no banco de dados com sucesso!'
         } else {
-            status.value = 'Inspeção permanece em Aguardando Rede.'
+            status.value = 'Erro ao enviar para o Back-end. A API (Oracle) pode estar fora do ar. Mantido no cache local para tentar mais tarde.'
         }
     } catch (e) {
         console.error('Erro ao sincronizar', e)
-        status.value = 'Erro na sincronização. Inspeção ficará em Aguardando Rede.'
+        status.value = 'Erro: A conexão com o Back-end falhou. Re-tentaremos automaticamente.'
     }
 }
 
@@ -223,15 +228,37 @@ function logout() {
     router.push('/login')
 }
 
-function setFilter(key) {
+
+async function setFilter(key) {
     viewFilter.value = key
+
+    if (key === 'sent') {
+        loadingApi.value = true
+        try {
+            let res = await getInspectionsAPI()
+
+            let arr = []
+            if (res && res.data && Array.isArray(res.data)) arr = res.data
+            else if (Array.isArray(res)) arr = res
+
+            sentApiData.value = arr.map(i => ({
+                ...i,
+                status: 'Enviado'
+            }))
+
+        } catch (e) {
+            console.error("Erro API Sent", e)
+            status.value = 'Erro ao buscar inspeções enviadas no banco.'
+        } finally {
+            loadingApi.value = false
+        }
+    }
 }
 
 // ✅ FILTRO AGORA USA STORE
 const filteredInspections = computed(() => {
+    if (viewFilter.value === 'sent') return sentApiData.value
     if (viewFilter.value === 'all') return inspections.value
-    if (viewFilter.value === 'sent')
-        return inspections.value.filter(i => i.status === 'Enviado')
     if (viewFilter.value === 'scheduled')
         return inspections.value.filter(i => i.status !== 'Enviado')
     return inspections.value

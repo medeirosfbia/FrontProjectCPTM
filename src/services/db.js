@@ -47,7 +47,10 @@ export async function saveInspection(data) {
         const tx = database.transaction(STORE_NAME, "readwrite")
         const store = tx.objectStore(STORE_NAME)
 
-        const request = store.put(data)
+        // Converter o objeto para um formato puro do JS, removendo Proxies(Vue) e dados não clonáveis que geram DataCloneError
+        const pureData = JSON.parse(JSON.stringify(data))
+
+        const request = store.put(pureData)
 
         request.onsuccess = () => resolve()
         request.onerror = (e) => reject(e)
@@ -71,6 +74,7 @@ export async function getAllInspections() {
 
     })
 }
+
 
 export async function deleteInspection(id) {
 

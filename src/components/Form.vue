@@ -33,6 +33,21 @@
                 <input v-model="form[field.key]" :placeholder="field.placeholder" />
               </template>
 
+              <!-- Injetar mapa se campo for location -->
+              <div v-if="field.key === 'location'" class="map-section">
+                <label>Coordenadas (captura GPS)</label>
+                <div v-if="form.latitude && form.longitude" class="coords-display">
+                  Lat: <input type="number" step="any" v-model.number="form.latitude" @change="updateMapFromInputs" />
+                  Lng: <input type="number" step="any" v-model.number="form.longitude" @change="updateMapFromInputs" />
+                </div>
+                <div class="map-wrap">
+                  <div id="inspection-map" style="height:280px; z-index: 1;"></div>
+                </div>
+                <div class="map-controls">
+                  <button type="button" class="btn" @click="captureGPS">Capturar Localização Aual</button>
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -68,19 +83,39 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import 'leaflet/dist/leaflet.css'
+import L from 'leaflet'
+// Em projetos Vite, o Leaflet pode perder os caminhos das imagens
+import markerIcon from 'leaflet/dist/images/marker-icon.png'
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+
 import { useInspectionStore } from '../stores/inspectionStore'
 import { useRouter, useRoute } from 'vue-router'
 import { computed } from 'vue'
 import { saveInspection } from '../services/db'
 import { getAllInspections } from '../services/db'
 import { syncInspections } from '../services/sync'
-import { getToken } from '../services/api'
+import { getToken, getIsAdmin } from '../services/api'
 import { watch } from 'vue'
+
+// Conserta os ícones do mapa Leaflet
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow
+})
 
 const router = useRouter()
 const route = useRoute()
 const store = useInspectionStore()
+
+// map refs
+const mapRef = ref(null)
+const mapMarker = ref(null)
+const personMarker = ref(null)
 
 const showUserMenu = ref(false)
 const status = ref('')
@@ -106,13 +141,16 @@ const form = reactive({
   title: '',
   location: '',
   address: '',
+  latitude: null,
+  longitude: null,
   notes: '',
   q1: '',
   q2: '',
   q3: '',
   q4: '',
   q5: '',
-  q6: ''
+  q6: '',
+  userEmail: ''
 })
 
 // carregar inspeção existente
@@ -129,6 +167,19 @@ onMounted(async () => {
     Object.assign(form, inspection)
   }
 
+})
+
+onMounted(() => {
+  // init map only on the page that contains the Local field (page 0)
+  // create a deferred init so it doesn't run when viewing other pages
+  tryInitMap()
+})
+
+onBeforeUnmount(() => {
+  if (mapRef.value) {
+    mapRef.value.remove()
+    mapRef.value = null
+  }
 })
 
 // ----------------------
@@ -193,6 +244,22 @@ const pages = [
 
 const totalPages = computed(() => pages.length)
 
+watch(currentPage, async (newPage) => {
+  if (newPage === 0) {
+    await nextTick()
+    setTimeout(() => {
+      tryInitMap()
+    }, 150)
+  } else {
+    if (mapRef.value) {
+      mapRef.value.remove()
+      mapRef.value = null
+      mapMarker.value = null
+      personMarker.value = null
+    }
+  }
+})
+
 function prevPage() {
   if (currentPage.value > 0) {
     currentPage.value--
@@ -235,31 +302,167 @@ async function submitForm() {
   // if offline, notify user and return
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     setStatus('Sem conexão. A inspeção ficará em Aguardando Rede.', 'warning', 5000)
-    setTimeout(() => router.push('/main-user'), 1000)
+    setTimeout(() => returnToMain(), 1000)
     return
   }
 
   // only attempt sync when authenticated
   const token = getToken()
   if (!token) {
-    setStatus('Não autenticado. Faça login para sincronizar.', 'error', 4000)
+    setStatus('Não autenticado. Faça login para sincronizar com o banco.', 'error', 4000)
     setTimeout(() => router.push('/login'), 1000)
     return
   }
 
-  // attempt synchronization (this will upload 'Aguardando Rede' items and fetch server items)
-  await syncInspections()
+  // attempt synchronization
+  try {
+      await syncInspections()
 
-  // after sync, check whether this inspection was removed from local store (means success)
-  const exists = store.inspections.find(i => i.id === form.id)
-  if (!exists) {
-    setStatus('Inspeção enviada com sucesso!', 'success', 2500)
-  } else {
-    setStatus('Inspeção permanece em Aguardando Rede.', 'warning', 5000)
+      // after sync, check whether this inspection was removed from local store (means success on backend)
+      const exists = store.inspections.find(i => i.id === form.id)
+      if (!exists) {
+        setStatus('Enviado com sucesso para o banco de dados Oracle!', 'success', 3500)
+      } else {
+        setStatus('Back-end inacessível! Salvo offline e tentaremos reenviar em breve.', 'warning', 6000)
+      }
+  } catch (err) {
+      setStatus('Erro de conexão com o Back-end/Banco.', 'error', 6000)
   }
 
-  setTimeout(() => router.push('/main-user'), 1200)
+  setTimeout(() => returnToMain(), 1200)
 
+}
+
+// geolocation helpers
+function setMarker(latlng) {
+  if (!mapRef.value) return
+  if (mapMarker.value) {
+    mapMarker.value.setLatLng(latlng)
+  } else {
+    mapMarker.value = L.marker(latlng, { draggable: true }).addTo(mapRef.value)
+    mapMarker.value.on('dragend', (e) => {
+      const p = e.target.getLatLng()
+      updatePosition(p.lat, p.lng)
+    })
+  }
+}
+
+function setPersonMarker(latlng) {
+  if (!mapRef.value) return
+  if (personMarker.value) {
+    personMarker.value.setLatLng(latlng)
+  } else {
+    const icon = L.divIcon({
+      html: '<div style="font-size: 36px; line-height: 1; filter: drop-shadow(0px 2px 3px rgba(0,0,0,0.8));">🧍</div>',
+      className: 'person-icon',
+      iconSize: [36, 36],
+      iconAnchor: [18, 36] // point to bottom center
+    })
+    personMarker.value = L.marker(latlng, { 
+      icon, 
+      zIndexOffset: 1000, 
+      interactive: false 
+    }).addTo(mapRef.value)
+  }
+}
+
+function updatePosition(lat, lng) {
+  form.latitude = Number(lat.toFixed(6))
+  form.longitude = Number(lng.toFixed(6))
+}
+
+function captureGPS() {
+  if (!navigator.geolocation) {
+    setStatus('Geolocalização não disponível no navegador', 'error', 4000)
+    return
+  }
+
+  setStatus('Capturando posição...', 'info', 0)
+
+  navigator.geolocation.getCurrentPosition((pos) => {
+    const lat = pos.coords.latitude
+    const lng = pos.coords.longitude
+    updatePosition(lat, lng)
+    if (mapRef.value) {
+      setMarker([lat, lng])
+      setPersonMarker([lat, lng])
+      mapRef.value.setView([lat, lng], 17) // Zoom mais próximo (era 16, agora 17)
+    }
+    setStatus('Posição capturada', 'success', 2000)
+  }, (err) => {
+    // Tratamento de erro detalhado para ajudar o usuário
+    if (err.code === 1) { // PERMISSION_DENIED
+      setStatus('Localização bloqueada pelo navegador. Permita o acesso ao GPS na barra de endereço.', 'error', 6000)
+    } else {
+      setStatus('Erro ao obter posição: ' + err.message, 'error', 4000)
+    }
+  }, { enableHighAccuracy: true, timeout: 10000 })
+}
+
+function tryInitMap() {
+  // initialize map container if present
+  setTimeout(() => {
+    const el = document.getElementById('inspection-map')
+    if (!el) return
+
+    if (mapRef.value) {
+      mapRef.value.invalidateSize()
+      return
+    }
+
+    mapRef.value = L.map(el, { center: [ -23.55052, -46.633308 ], zoom: 13 })
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(mapRef.value)
+
+    // if we already have coordinates, show marker
+    if (form.latitude && form.longitude) {
+      setMarker([form.latitude, form.longitude])
+      mapRef.value.setView([form.latitude, form.longitude], 17)
+    }
+
+    // Sempre mostrar onde o usuário está com o ícone da pessoinha
+    if (navigator.geolocation) {
+      if (inspectionId === 'new' && !form.latitude) setStatus('Capturando posição...', 'info', 0);
+      
+      navigator.geolocation.getCurrentPosition((pos) => {
+        if (mapRef.value) {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          
+          setPersonMarker([lat, lng]);
+          
+          // Se for uma nova inspeção e estiver vazia, assume essa posição logada como a inicial!
+          if (inspectionId === 'new' && !form.latitude) {
+            updatePosition(lat, lng);
+            setMarker([lat, lng]);
+            mapRef.value.setView([lat, lng], 17);
+            setStatus('Posição inicial capturada', 'success', 2000);
+          }
+        }
+      }, (err) => {
+        console.warn("Não foi possível obter a posição atual:", err)
+        if (inspectionId === 'new' && !form.latitude) {
+           if (err.code === 1) setStatus('Acesso ao GPS bloqueado.', 'error', 4000);
+           else setStatus('Falha ao capturar posição: ' + err.message, 'error', 4000);
+        }
+      }, { enableHighAccuracy: true, timeout: 10000 })
+    }
+
+    // allow clicking on map to set marker
+    mapRef.value.on('click', (e) => {
+      const { lat, lng } = e.latlng
+      updatePosition(lat, lng)
+      setMarker([lat, lng])
+    })
+    
+    // Assegura que o mapa ajuste ao tamanho do container
+    setTimeout(() => {
+      if (mapRef.value) mapRef.value.invalidateSize()
+    }, 200)
+
+  }, 100)
 }
 
 async function persistInspection(status = "Rascunho") {
@@ -270,7 +473,8 @@ async function persistInspection(status = "Rascunho") {
 
   const payload = {
     ...form,
-    status
+    status,
+    userEmail: form.userEmail || localStorage.getItem('user_email') || ''
   }
 
   await saveInspection(payload)
@@ -292,22 +496,33 @@ async function saveDraft() {
 
   setStatus('Rascunho salvo', 'success', 2000)
 
-  router.push("/main-user")
-
+  returnToMain()
 }
 
+function returnToMain() {
+  if (getIsAdmin()) {
+    router.push('/main-admin')
+  } else {
+    router.push('/main-user')
+  }
+}
 
 function cancel() {
-  router.push('/main-user')
+  returnToMain()
 }
 
 function logout() {
   localStorage.removeItem("auth_token")
   localStorage.removeItem("user_role")
-  localStorage.removeItem("user_is_admin")
 
   showUserMenu.value = false
   router.push('/login')
+}
+function updateMapFromInputs() {
+  if (mapRef.value && form.latitude && form.longitude) {
+    setMarker([form.latitude, form.longitude])
+    mapRef.value.setView([form.latitude, form.longitude], 17)
+  }
 }
 </script>
 
@@ -398,6 +613,41 @@ function logout() {
 .table-wrap {
   background: transparent;
   padding: 0
+}
+
+.map-section {
+  margin-top: 1rem;
+}
+
+.map-wrap {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e6e6e9;
+}
+
+.map-controls {
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.coords-display {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  color: #444;
+}
+
+.coords-display input {
+  width: 100px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
 }
 
 .form {
@@ -596,5 +846,10 @@ textarea:focus {
   .actions {
     flex-direction: column
   }
+}
+.person-icon {
+  background: transparent;
+  border: none;
+  cursor: default;
 }
 </style>

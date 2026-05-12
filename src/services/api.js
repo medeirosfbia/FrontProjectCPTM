@@ -95,6 +95,7 @@ export function logout() {
   localStorage.removeItem('auth_token')
   localStorage.removeItem('user_role')
   localStorage.removeItem('user_is_admin')
+  localStorage.removeItem('user_email')
 }
 
 /**
@@ -151,6 +152,7 @@ export async function login(email, password) {
   if (!token) throw new Error('Token not returned from auth')
 
   localStorage.setItem('auth_token', token)
+  localStorage.setItem('user_email', email)
 
   const isAdmin = inferIsAdmin(res, token)
 
@@ -160,6 +162,27 @@ export async function login(email, password) {
   }
 
   return res
+}
+
+export function getCurrentUserId() {
+  const token = getToken()
+  const payload = decodeJwtPayload(token)
+  return payload?.sub ? Number(payload.sub) : null
+}
+
+export async function getUsuariosAPI() {
+  return apiFetch('/Usuarios', { method: 'GET' })
+}
+
+export async function getInspecoesPorUsuarioAPI(usuarioId) {
+  return apiFetch(`/Inspecoes/usuario/${usuarioId}`, { method: 'GET' })
+}
+
+export async function criarUsuarioAPI(data) {
+  return apiFetch('/Usuarios/register', {
+    method: 'POST',
+    body: data
+  })
 }
 
 /* Inspections CRUD using apiFetch */
@@ -185,6 +208,10 @@ export default {
   logout,
   getToken,
   getIsAdmin,
+  getCurrentUserId,
+  getUsuariosAPI,
+  getInspecoesPorUsuarioAPI,
+  criarUsuarioAPI,
   createInspectionAPI,
   getInspectionsAPI,
   updateInspectionAPI,
