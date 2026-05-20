@@ -17,6 +17,8 @@ app.mount('#app')
 
 async function boot() {
 	try {
+		initSync()
+		syncInspections()
 		await initDB()
 		initSync()
 		if (navigator.onLine) {

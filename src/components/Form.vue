@@ -728,9 +728,15 @@ textarea:focus {
   padding: 0.45rem 0.7rem;
   border-radius: 8px;
   border: 1px solid #eee;
-  background: #fff;
+  background-color: #ffffff;
+  color: #333333;
   cursor: pointer;
-  color: #333
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn:hover {
+  background-color: #f0f0f0;
 }
 
 .btn.draw {
@@ -739,8 +745,13 @@ textarea:focus {
 }
 
 .btn.ghost {
-  color: #f7f7f8;
-  background: #ee3338;
+  color: #ee3338;
+  background-color: transparent;
+  border-color: #ee3338;
+}
+
+.btn.ghost:hover {
+  background-color: rgba(238, 51, 56, 0.1);
 }
 
 .status {
@@ -811,15 +822,22 @@ textarea:focus {
 .page-btn {
   padding: 0.35rem 0.6rem;
   border-radius: 6px;
-  border: 1px solid #eee;
-  background: #fff;
-  cursor: pointer
+  border: 1px solid #ccc;
+  background-color: #ffffff;
+  color: #333333;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.page-btn:hover {
+  background-color: #f0f0f0;
 }
 
 .page-btn.active {
-  background: #097a5e;
-  color: #fff;
-  border-color: transparent
+  background-color: #097a5e;
+  color: #ffffff;
+  border-color: transparent;
 }
 
 @media (max-width:480px) {

@@ -150,7 +150,7 @@ input {
 
 .checkbox-title {
     font-size: 0.85rem;
-    color: #555;
+    color: #0a0000;
     margin-right: 1rem;
 }
 
@@ -198,15 +198,27 @@ input {
     padding: 0.75rem;
     border-radius: 10px;
     border: 1px solid #ccc;
-    background: #eee;
-    color: #333;
+    background-color: #ffffff;
+    color: #333333;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 6px 18px rgba(183, 28, 28, 0.18);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s;
 }
 
 .btn:hover {
-    background: #ddd;
+    background-color: #f0f0f0;
+}
+
+.btn.ghost {
+    background-color: transparent;
+    border-color: transparent;
+    color: #097a5e;
+    box-shadow: none;
+}
+
+.btn.ghost:hover {
+    background-color: rgba(9, 122, 94, 0.1);
 }
 
 .muted {

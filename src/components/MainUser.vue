@@ -32,31 +32,11 @@
 
             <div class="controls">
                 <div v-if="status" class="sync-message">{{ status }}</div>
-                <div class="quick-grid">
-                    <button class="quick-btn green" @click="openNewInspection" aria-label="Abrir nova inspeção">
-                        <Plus :size="28" />
-                        <div class="label">Abrir nova inspeção</div>
-                    </button>
-
-                    <button class="quick-btn yellow" :class="{ active: viewFilter === 'scheduled' }"
-                        @click="setFilter('scheduled')" :aria-pressed="viewFilter === 'scheduled'"
-                        aria-label="Inspeções agendadas">
-                        <Calendar :size="28" />
-                        <div class="label">Inspeções agendadas</div>
-                    </button>
-
-                    <button class="quick-btn blue" :class="{ active: viewFilter === 'sent' }" @click="setFilter('sent')"
-                        aria-label="Inspeções enviadas">
-                        <Send :size="28" />
-                        <div class="label">Inspeções enviadas</div>
-                    </button>
-
-                    <button class="quick-btn red" :class="{ active: viewFilter === 'all' }" @click="setFilter('all')"
-                        :aria-pressed="viewFilter === 'all'" aria-label="Minhas inspeções">
-                        <ClipboardList :size="28" />
-                        <div class="label">Minhas inspeções</div>
-                    </button>
-                </div>
+                <QuickGrid 
+                    :viewFilter="viewFilter" 
+                    @setFilter="setFilter" 
+                    @openNewInspection="openNewInspection" 
+                />
             </div>
 
             <div class="table-wrap">
@@ -95,6 +75,7 @@ import { saveInspection, getAllInspections, deleteInspection as deleteInspection
 import { syncInspections } from '../services/sync'
 import { getToken, getInspectionsAPI } from '../services/api'
 import { Plus, Calendar, Send, ClipboardList, LogOut, User } from 'lucide-vue-next'
+import QuickGrid from './QuickGrid.vue'
 
 onMounted(async () => {
     try {
@@ -110,6 +91,9 @@ onMounted(async () => {
     } catch (err) {
         console.error("Erro ao carregar inspeções do IndexedDB", err)
     }
+
+    // Carrega do backend e renderiza as duas via 'all'
+    await setFilter('all')
 })
 
 
@@ -232,7 +216,7 @@ function logout() {
 async function setFilter(key) {
     viewFilter.value = key
 
-    if (key === 'sent') {
+    if (key === 'sent' || key === 'all') {
         loadingApi.value = true
         try {
             let res = await getInspectionsAPI()
@@ -248,17 +232,26 @@ async function setFilter(key) {
 
         } catch (e) {
             console.error("Erro API Sent", e)
-            status.value = 'Erro ao buscar inspeções enviadas no banco.'
+            status.value = 'Erro ao buscar inspeções no banco.'
         } finally {
             loadingApi.value = false
         }
     }
 }
 
-// ✅ FILTRO AGORA USA STORE
+// ✅ FILTRO AGORA USA STORE E MOSTRA TODAS
 const filteredInspections = computed(() => {
     if (viewFilter.value === 'sent') return sentApiData.value
-    if (viewFilter.value === 'all') return inspections.value
+    if (viewFilter.value === 'all') {
+        const merged = [...inspections.value]
+        const localIds = new Set(merged.map(i => String(i.id)))
+        for (const s of sentApiData.value) {
+            if (!localIds.has(String(s.id))) {
+                merged.push(s)
+            }
+        }
+        return merged.sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    }
     if (viewFilter.value === 'scheduled')
         return inspections.value.filter(i => i.status !== 'Enviado')
     return inspections.value
@@ -352,13 +345,28 @@ function cancelModal() {
     gap: 0.75rem
 }
 
+.user-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.25rem;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f0f0f0;
+}
+
 .logo {
-    width: 56px
+    width: 64px;
+    object-fit: contain;
 }
 
 .header-info h1 {
     margin: 0;
-    font-size: 1.4rem
+    font-size: 1.5rem;
+    color: #222;
+    font-weight: 700;
 }
 
 .subtitle {
@@ -519,9 +527,14 @@ function cancelModal() {
 
 .modal-actions .btn.cancel {
     background: transparent;
-    border: 1px solid #ddd;
+    border: 1px solid #2b5c9e;
+    color: #2b5c9e;
     padding: 0.55rem 0.9rem;
     border-radius: 8px;
+}
+
+.modal-actions .btn.cancel:hover {
+    background: rgba(43, 92, 158, 0.1);
 }
 
 .table-wrap {
@@ -609,9 +622,15 @@ h1 {
     padding: 0.45rem 0.7rem;
     border-radius: 8px;
     border: 1px solid #eee;
-    background: #fff;
+    background-color: #ffffff;
+    color: #333333;
     cursor: pointer;
-    color: #333
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    background-color: #f0f0f0;
 }
 
 .btn.continue {
@@ -625,8 +644,9 @@ h1 {
 }
 
 .btn.ghost.delete {
-    background: #de221d;
-    color: #fff
+    background: #ffeaeb;
+    border: 1px solid #ffbcbc;
+    color: #ca1616;
 }
 
 .btn.ghost {

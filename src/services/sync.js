@@ -8,6 +8,8 @@ import {
     getToken
 } from './api'
 
+let syncing = false 
+
 export const syncState = ref('')
 
 /**
@@ -76,8 +78,11 @@ export async function sendInspectionNow(inspection) {
         const sid = serverRes?.id || serverRes?.serverId || serverRes?.data?.id
         if (sid) inspection.serverId = sid
 
+        inspection.status = 'Enviado'
+        await saveInspection(inspection)
+
         // delete local copy since server has it
-        try { await deleteInspection(inspection.id) } catch (e) { /* ignore */ }
+        // try { await deleteInspection(inspection.id) } catch (e) { /* ignore */ }
 
         // return server-side info (include serverId)
         return { ...inspection, status: 'Enviado', serverId: sid }
@@ -111,25 +116,25 @@ export async function syncInspections() {
         let deletedCount = 0
 
         for (const inspection of pending) {
-                try {
-                    const updated = await sendInspectionNow(inspection)
+            try {
+                const updated = await sendInspectionNow(inspection)
 
-                    if (updated && updated.status === 'Enviado') {
-                        // remove from pinia store (local ID was deleted by sendInspectionNow)
-                        const idx = store.inspections.findIndex(i => i.id === updated.id)
-                        if (idx >= 0) store.inspections.splice(idx, 1)
+                if (updated && updated.status === 'Enviado') {
+                    // remove from pinia store (local ID was deleted by sendInspectionNow)
+                    const idx = store.inspections.findIndex(i => i.id === updated.id)
+                    if (idx >= 0) store.inspections.splice(idx, 1)
 
-                        deletedCount++
-                    } else {
-                        // if not sent, ensure store has the latest state
-                        const idx = store.inspections.findIndex(i => i.id === updated.id)
-                        if (idx >= 0) store.inspections[idx] = { ...updated }
-                        else store.inspections.push({ ...updated })
-                    }
-
-                } catch (err) {
-                    // continue with next
+                    deletedCount++
+                } else {
+                    // if not sent, ensure store has the latest state
+                    const idx = store.inspections.findIndex(i => i.id === updated.id)
+                    if (idx >= 0) store.inspections[idx] = { ...updated }
+                    else store.inspections.push({ ...updated })
                 }
+
+            } catch (err) {
+                // continue with next
+            }
         }
 
         // after uploading pending items, fetch server-side inspections and persist locally
@@ -141,8 +146,16 @@ export async function syncInspections() {
                     if (Array.isArray(serverItems)) {
                         for (const s of serverItems) {
                             try {
+
+                                const exists = store.inspections.find(
+                                    i => i.serverId === s.id
+                                )
+
+                                if (exists) continue
                                 // create local representation; use prefixed id to avoid collision with local ids
+
                                 const localId = `s${s.id}`
+
                                 const localObj = { ...s, id: localId, serverId: s.id, status: 'Enviado' }
 
                                 // persist to IndexedDB
@@ -162,33 +175,79 @@ export async function syncInspections() {
         } catch (e) {
             // ignore server fetch errors
         }
+        const refreshed = await getAllInspections()
+        store.inspections = [...refreshed]
 
         if (deletedCount > 0) {
-                syncState.value = `${deletedCount} inspeção(ões) sincronizada(s) e removida(s) do armazenamento local`
-                try {
-                    window.dispatchEvent(new CustomEvent('inspections-synced', { detail: { count: deletedCount } }))
-                } catch (e) {
-                    // ignore if window not available
-                }
-            } else {
-                syncState.value = 'Sincronização concluída'
+            syncState.value = `${deletedCount} inspeção(ões) sincronizada(s) e removida(s) do armazenamento local`
+            try {
+                window.dispatchEvent(new CustomEvent('inspections-synced', { detail: { count: deletedCount } }))
+            } catch (e) {
+                // ignore if window not available
             }
+        } else {
+            syncState.value = 'Sincronização concluída'
+        }
     } catch (err) {
         syncState.value = 'Erro na sincronização'
     }
 }
 
 
+// export function initSync() {
+//     try {
+//         window.addEventListener('online', () => {
+//             if (navigator.onLine) {
+//                 const token = getToken()
+//                 if (token) syncInspections()
+//             }
+//         })
+//     } catch (e) {
+//         // ignore non-browser env
+//     }
+// }
+
 export function initSync() {
+
+    async function runSync() {
+
+        if (syncing) return
+
+        if (!navigator.onLine) return
+
+        const token = getToken()
+
+        if (!token) return
+
+        try {
+
+            syncing = true
+
+            console.log('Tentando sincronização automática...')
+
+            await syncInspections()
+
+        } catch (e) {
+
+            console.error('Erro no sync automático:', e)
+
+        } finally {
+
+            syncing = false
+
+        }
+    }
+
     try {
-        window.addEventListener('online', () => {
-            if (navigator.onLine) {
-                const token = getToken()
-                if (token) syncInspections()
-            }
-        })
+
+        window.addEventListener('online', runSync)
+
+        setInterval(runSync, 5000)
+
     } catch (e) {
-        // ignore non-browser env
+
+        console.error(e)
+
     }
 }
 

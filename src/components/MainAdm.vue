@@ -121,30 +121,11 @@
 
                 <div class="app-controls">
                     <div v-if="status" class="sync-message">{{ status }}</div>
-                    <div class="quick-grid">
-                        <button class="quick-btn green" @click="openNewInspection" aria-label="Abrir nova inspeção">
-                            <div style="font-size:1.6rem; color:#fff;">➕</div>
-                            <div class="label">Nova inspeção</div>
-                        </button>
-
-                        <button class="quick-btn yellow" :class="{ active: viewFilter === 'scheduled' }"
-                            @click="setFilter('scheduled')" aria-label="Agendadas">
-                            <div style="font-size:1.6rem; color:#fff;">📅</div>
-                            <div class="label">Agendadas</div>
-                        </button>
-
-                        <button class="quick-btn blue" :class="{ active: viewFilter === 'sent' }"
-                            @click="setFilter('sent')" aria-label="Enviadas">
-                            <div style="font-size:1.6rem; color:#fff;">📤</div>
-                            <div class="label">Enviadas</div>
-                        </button>
-
-                        <button class="quick-btn red" :class="{ active: viewFilter === 'all' }"
-                            @click="setFilter('all')" aria-label="Minhas">
-                            <div style="font-size:1.6rem; color:#fff;">📋</div>
-                            <div class="label">Minhas inspeções</div>
-                        </button>
-                    </div>
+                    <QuickGrid 
+                        :viewFilter="viewFilter" 
+                        @setFilter="setFilter" 
+                        @openNewInspection="openNewInspection" 
+                    />
                 </div>
 
                 <div class="table-wrap app-table">
@@ -200,16 +181,16 @@
 
         <div v-if="createUserModalVisible" class="modal-overlay">
     <div class="modal">
-        <h3>Criar novo usuário</h3>
+        <h3>Criar usuário</h3>
 
         <label class="field">
             <span>Nome</span>
-            <input v-model="newUser.nomeCompleto" type="text" />
+            <input v-model="newUser.nomeCompleto" type="text" placeholder="Ex: João da Silva"/>
         </label>
 
         <label class="field">
             <span>Email</span>
-            <input v-model="newUser.email" type="email" />
+            <input v-model="newUser.email" type="email" placeholder="Ex: joao@cptm.sp.gov.br"/>
         </label>
 
         <label class="field">
@@ -219,7 +200,7 @@
 
         <label class="field">
             <span>Senha</span>
-            <input v-model="newUser.senha" type="password" />
+            <input v-model="newUser.senha" type="password" placeholder="••••••••"/>
         </label>
 
         <label class="field checkbox-group">
@@ -245,6 +226,7 @@ import { storeToRefs } from 'pinia'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
 import { syncInspections } from '../services/sync'
 import { getToken, getCurrentUserId, getInspectionsAPI, getUsuariosAPI, getInspecoesPorUsuarioAPI, criarUsuarioAPI } from '../services/api'
+import QuickGrid from './QuickGrid.vue'
 
 // Gerais
 const router = useRouter()
@@ -453,6 +435,9 @@ onMounted(async () => {
     } catch (err) {
         console.error("Erro ao carregar inspeções", err)
     }
+
+    // Carrega do backend e renderiza as duas via 'all'
+    await setFilter('all')
 })
 
 const filteredInspections = computed(() => {
@@ -461,14 +446,24 @@ const filteredInspections = computed(() => {
     const myInspections = inspections.value.filter(i => i.userEmail === currentUser)
 
     if (viewFilter.value === 'sent') return sentApiData.value
-    if (viewFilter.value === 'all') return myInspections
+    if (viewFilter.value === 'all') {
+        const merged = [...myInspections]
+        const localIds = new Set(merged.map(i => String(i.id)))
+        for (const s of sentApiData.value) {
+            if (!localIds.has(String(s.id))) {
+                merged.push(s)
+            }
+        }
+        // sort by most recent if possible, here just returning merged
+        return merged.sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    }
     if (viewFilter.value === 'scheduled') return myInspections.filter(i => i.status !== 'Enviado')
     return myInspections
 })
 
 async function setFilter(key) {
     viewFilter.value = key
-    if (key === 'sent') {
+    if (key === 'sent' || key === 'all') {
         loadingApi.value = true
         try {
             let res = await getInspectionsAPI()
@@ -485,7 +480,7 @@ async function setFilter(key) {
                 .filter(i => Number(i.usuarioId) === Number(currentUserId))
         } catch (e) {
             console.error("Erro API Sent", e)
-            status.value = 'Erro ao buscar inspeções enviadas no banco.'
+            status.value = 'Erro ao buscar inspeções no banco.'
         } finally {
             loadingApi.value = false
         }
@@ -614,7 +609,12 @@ function cancelModal() {
     display: flex;
     align-items: center;
     gap: 1rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.25rem;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f0f0f0;
 }
 
 .header-left {
@@ -624,17 +624,21 @@ function cancelModal() {
 }
 
 .logo {
-    width: 56px;
+    width: 64px;
+    object-fit: contain;
 }
 
 .header-info h1 {
     margin: 0;
-    font-size: 1.4rem;
+    font-size: 1.5rem;
+    color: #222;
+    font-weight: 700;
 }
 
 .subtitle {
     margin: 0;
     color: #666;
+    font-weight: 500;
 }
 
 .user-area {
@@ -701,27 +705,30 @@ function cancelModal() {
 /* Abas do Admin */
 .admin-tabs {
     display: flex;
-    gap: 1rem;
-    border-bottom: 2px solid #eee;
-    margin-bottom: 1rem;
+    gap: 0.5rem;
+    background: #f4f4f4;
+    padding: 0.4rem;
+    border-radius: 10px;
+    margin-bottom: 1.5rem;
 }
 
 .tab-btn {
+    flex: 1;
     background: transparent;
     border: none;
     font-size: 1rem;
     font-weight: 600;
-    color: #888;
+    color: #666;
     padding: 0.75rem 1rem;
     cursor: pointer;
-    border-bottom: 3px solid transparent;
-    margin-bottom: -2px;
-    /* overlap border */
+    border-radius: 6px;
+    transition: all 0.2s ease;
 }
 
 .tab-btn.active {
-    color: #b71c1c;
-    border-bottom-color: #b71c1c;
+    background: #ffffff;
+    color: #097a5e;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 /* Tabelas (Usuários) */
@@ -940,10 +947,27 @@ function cancelModal() {
 
 .btn {
     padding: 0.5rem 0.75rem;
-    border: none;
+    border: 1px solid #ddd;
+    background-color: #ffffff;
+    color: #333333;
     border-radius: 6px;
     font-weight: 600;
     cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    background-color: #f0f0f0;
+}
+
+.btn.ghost {
+    background-color: transparent;
+    border-color: transparent;
+    color: #097a5e;
+}
+
+.btn.ghost:hover {
+    background-color: rgba(9, 122, 94, 0.1);
 }
 
 .continue {
@@ -963,7 +987,7 @@ function cancelModal() {
 }
 
 .ghost.delete {
-    background: transparent;
+    background: #ffeaeb;
     border: 1px solid #ffbcbc;
     color: #ca1616;
     padding: 0.4rem 0.6rem;
@@ -1019,10 +1043,34 @@ function cancelModal() {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    margin-bottom: 0.8rem;
+    margin-bottom: 1rem;
     text-align: left;
-    color: #333;
+    color: #444;
     font-weight: 500;
+}
+
+.modal .field span {
+    font-size: 0.9rem;
+}
+
+.modal .field.checkbox-group {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.modal .field.checkbox-group input {
+    width: auto;
+    margin: 0;
+    accent-color: #097a5e;
+    cursor: pointer;
+    transform: scale(1.1);
+}
+
+.modal .field.checkbox-group span {
+    font-weight: 600;
+    cursor: pointer;
 }
 
 .modal-actions {
@@ -1047,8 +1095,13 @@ function cancelModal() {
 
 .modal-actions .btn.cancel {
     background: transparent;
-    border: 1px solid #ddd;
+    border: 1px solid #2b5c9e;
+    color: #2b5c9e;
     padding: 0.55rem 0.9rem;
+}
+
+.modal-actions .btn.cancel:hover {
+    background: rgba(43, 92, 158, 0.1);
 }
 
 @media (max-width: 720px) {
