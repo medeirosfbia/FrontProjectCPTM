@@ -44,7 +44,7 @@
                   <div id="inspection-map" style="height:280px; z-index: 1;"></div>
                 </div>
                 <div class="map-controls">
-                  <button type="button" class="btn" @click="captureGPS">Capturar Localização Aual</button>
+                  <button type="button" class="btn" @click="captureGPS">Capturar Localização Atual</button>
                 </div>
               </div>
 
