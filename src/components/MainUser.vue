@@ -37,10 +37,10 @@
                     @setFilter="setFilter" 
                     @openNewInspection="openNewInspection" 
                 />
-                <input class="search-input" v-model="searchQuery" style="background: #fff; color: #333;" placeholder="Buscar por título..." />
             </div>
 
             <div class="table-wrap">
+                <input class="inspection-search" v-model="searchQuery" placeholder="Buscar por título..." />
                 <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhuma inspeção neste filtro.</div>
                 <div v-if="loadingApi" class="notice" style="color:blue;">Sincronizando com o banco de dados...</div>
 
@@ -355,17 +355,24 @@ function cancelModal() {
 
 
 <style scoped>
-.search-input {
+.inspection-search {
     width: 100%;
-    padding: 12px;
-    border: 1px solid #ccc;
+    padding: 12px 14px;
+    border: 1px solid #d7dbe2;
     background: #fff;
     color: #333;
-    border-radius: 8px;
+    border-radius: 12px;
     font-size: 1rem;
-    margin-top: 15px; /* Added spacing from buttons above */
+    margin-top: 15px;
     margin-bottom: 15px;
     box-sizing: border-box;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.inspection-search:focus {
+    outline: none;
+    border-color: #097a5e;
+    box-shadow: 0 0 0 3px rgba(9, 122, 94, 0.12);
 }
 
 /* Use user panel visual language */

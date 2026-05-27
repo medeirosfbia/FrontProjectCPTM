@@ -37,7 +37,12 @@
                 <!-- Visualizando um usuário específico -->
                 <div v-if="selectedUser" class="user-details">
                     <button class="btn ghost back-btn" @click="selectedUser = null">← Voltar para lista</button>
-                    <h2>Inspeções de {{ selectedUser.name }}</h2>
+                    <h2 class="user-inspections-title">Inspeções de {{ selectedUser.name }}</h2>
+                    <input
+                        class="inspection-search"
+                        v-model="userInspectionSearchQuery"
+                        placeholder="Buscar por título..."
+                    />
                     <div class="table-wrap">
                         <!-- <div v-if="!userInspections.length" class="notice">{{ selectedUser.name }} não possui inspeções ainda.</div> -->
                         <div v-if="loadingUserInspections" class="notice">
@@ -48,7 +53,7 @@
                             {{ selectedUser.name }} não possui inspeções ainda.
                         </div>
                         <section v-else class="list">
-                            <div v-for="ins in userInspections" :key="ins.id" class="inspection">
+                            <div v-for="ins in filteredUserInspections" :key="ins.id" class="inspection">
                                 <div class="left">
                                     <strong class="inspection-title">{{ ins.title }}</strong>
                                     <div class="mono">ID: {{ ins.id }}</div>
@@ -137,6 +142,7 @@
                 </div>
 
                 <div class="table-wrap app-table">
+                    <input class="inspection-search" v-model="inspectionSearchQuery" placeholder="Buscar por título..." />
                     <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhuma inspeção neste filtro.
                     </div>
                     <div v-if="loadingApi" class="notice" style="color:blue;">Sincronizando com o banco de dados...
@@ -246,6 +252,7 @@ function setTab(tab) {
 const query = ref('')
 const sortKey = ref('name')
 const sortDir = ref(1)
+const userInspectionSearchQuery = ref('')
 
 const selectedUser = ref(null)
 const userInspections = ref([]) // Simulação
@@ -305,6 +312,16 @@ function statusClass(ins) {
     if (value.includes('não enviada') || value.includes('nao enviada') || value.includes('não enviado') || value.includes('nao enviado')) return 'status--draft'
     return 'status--neutral'
 }
+
+const filteredUserInspections = computed(() => {
+    const query = userInspectionSearchQuery.value.trim().toLowerCase()
+    if (!query) return userInspections.value
+
+    return userInspections.value.filter(ins => {
+        const title = String(ins.title || ins.titulo || '').toLowerCase()
+        return title.includes(query)
+    })
+})
 
 async function carregarUsuarios() {
     loadingUsers.value = true
@@ -428,6 +445,7 @@ async function seeMore(w) {
 const store = useInspectionStore()
 const { inspections } = storeToRefs(store)
 const viewFilter = ref('all')
+const inspectionSearchQuery = ref('')
 const status = ref('')
 const loadingApi = ref(false)
 const sentApiData = ref([])
@@ -454,8 +472,10 @@ const filteredInspections = computed(() => {
     // Na aba de 'Minhas Inspeções', o Admin vê apenas as que ele mesmo criou
     const myInspections = inspections.value.filter(i => i.userEmail === currentUser)
 
-    if (viewFilter.value === 'sent') return sentApiData.value
-    if (viewFilter.value === 'all') {
+    let result = []
+
+    if (viewFilter.value === 'sent') result = sentApiData.value
+    else if (viewFilter.value === 'all') {
         const merged = [...myInspections]
         const localIds = new Set(merged.map(i => String(i.id)))
         for (const s of sentApiData.value) {
@@ -464,11 +484,21 @@ const filteredInspections = computed(() => {
             }
         }
         // sort by most recent if possible, here just returning merged
-        return merged.sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        result = merged.sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     }
-    if (viewFilter.value === 'scheduled') return myInspections.filter(i => i.status !== 'Enviado')
-    return myInspections
+
+    else if (viewFilter.value === 'scheduled') result = myInspections.filter(i => i.status !== 'Enviado')
+    else result = myInspections
+
+    return applyInspectionSearch(result)
 })
+
+function applyInspectionSearch(list) {
+    const query = inspectionSearchQuery.value.trim().toLowerCase()
+    if (!query) return list
+
+    return list.filter(i => String(i.title || i.titulo || '').toLowerCase().includes(query))
+}
 
 async function setFilter(key) {
     viewFilter.value = key
@@ -817,6 +847,12 @@ function cancelModal() {
     gap: 0.5rem;
 }
 
+.user-inspections-title {
+    color: #111;
+    background: transparent;
+    margin: 0.25rem 0 0.5rem;
+}
+
 .back-btn {
     align-self: flex-start;
     padding: 0.5rem 1rem;
@@ -831,6 +867,24 @@ function cancelModal() {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+}
+
+.inspection-search {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid #d7dbe2;
+    background: #fff;
+    color: #333;
+    border-radius: 12px;
+    font-size: 1rem;
+    box-sizing: border-box;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.inspection-search:focus {
+    outline: none;
+    border-color: #097a5e;
+    box-shadow: 0 0 0 3px rgba(9, 122, 94, 0.12);
 }
 
 .sync-message {

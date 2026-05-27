@@ -9,7 +9,7 @@
             </div>
 
             <div class="controls">
-                <input class="search-input" v-model="searchQuery" style="background:#fff; color:#333;" placeholder="Buscar por título..." />
+                <input class="inspection-search" v-model="searchQuery" placeholder="Buscar por título..." />
                 <div v-if="loading" class="sync-message">Carregando inspeções do banco de dados...</div>
                 <div v-if="error" class="sync-message" style="color: red;">{{ error }}</div>
             </div>
@@ -121,13 +121,22 @@ function goBack() {
     cursor: pointer;
     margin-right: 15px;
 }
-.search-input {
+.inspection-search {
     width: 100%;
-    padding: 12px;
-    border: 1px solid #ccc;
-    border-radius: 8px;
+    padding: 12px 14px;
+    border: 1px solid #d7dbe2;
+    background: #fff;
+    color: #333;
+    border-radius: 12px;
     font-size: 1rem;
     margin-bottom: 15px;
     box-sizing: border-box;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.inspection-search:focus {
+    outline: none;
+    border-color: #097a5e;
+    box-shadow: 0 0 0 3px rgba(9, 122, 94, 0.12);
 }
 </style>
