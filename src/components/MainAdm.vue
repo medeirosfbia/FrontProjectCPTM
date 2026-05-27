@@ -54,12 +54,13 @@
                                     <div class="mono">ID: {{ ins.id }}</div>
                                 </div>
                                 <div class="right">
-                                    <div class="status">{{ ins.status || 'Enviado' }}</div>
-                                    <button class="btn ghost btn-small" @click="openDetails(ins)">
-                                        Ver Inteira
-                                    </button>
-                                    <!-- <button class="btn ghost btn-small"
-                                        @click="alert('Detalhes da inspeção em breve.')">Ver Inteira</button> -->
+                                    <div :class="['status', statusClass(ins)]">{{ statusLabel(ins) }}</div>
+                                    <div class="action-menu-container">
+                                        <button class="btn-small dots-btn" @click.stop="toggleMenu('ins-' + ins.id)">⋮</button>
+                                        <div class="action-menu" v-if="activeMenu === ('ins-' + ins.id)">
+                                            <button class="btn" @click="openDetails(ins); toggleMenu(null)">Ver Inteira</button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </section>
@@ -87,11 +88,18 @@
                             </thead>
                             <tbody>
                                 <tr v-for="w in filtered" :key="w.id">
-                                    <td>{{ w.name }}</td>
-                                    <td>{{ w.email }}</td>
-                                    <td class="mono">{{ w.submissions }}</td>
-                                    <td>
-                                        <button class="btn-small action-btn" @click="seeMore(w)">Ver mais</button>
+                                    <td data-label="Nome">{{ w.name }}</td>
+                                    <td data-label="Email">{{ w.email }}</td>
+                                    <td data-label="Envios" class="mono">{{ w.submissions }}</td>
+                                    <td data-label="Ações">
+                                        <div class="action-menu-container">
+                                            <button class="btn-small dots-btn" @click.stop="toggleMenu('user-' + w.id)">⋮</button>
+                                            <div class="action-menu" v-if="activeMenu === ('user-' + w.id)">
+                                                <button class="btn" @click="seeMore(w); toggleMenu(null)">Ver</button>
+                                                <button class="btn" style="background:#f2c036;color:#333;" @click="editUserBtn(w); toggleMenu(null)">Editar</button>
+                                                <button class="btn" style="background:#dc1c22;color:#fff;" @click="deleteUserBtn(w); toggleMenu(null)">Apagar</button>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                             </tbody>
@@ -134,50 +142,27 @@
                     <div v-if="loadingApi" class="notice" style="color:blue;">Sincronizando com o banco de dados...
                     </div>
 
-                    <section v-if="filteredInspections.length" class="list">
-                        <h2>Listagem de Inspeções ({{ filteredInspections.length }})</h2>
-                        <div v-for="ins in filteredInspections" :key="ins.id" class="inspection">
-                            <div class="left">
-                                <strong class="inspection-title">{{ ins.title || ins.titulo || 'Sem Título' }}</strong>
-                                <div class="mono">ID: {{ ins.id }}</div>
-                            </div>
-                            <div class="right">
-                                <div class="status">{{ ins.status || 'Enviado' }}</div>
-                                <button class="btn continue" @click="goToForm(ins)"
-                                    :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede' || viewFilter === 'sent'">Continuar</button>
-                                <button class="btn send-btn" @click="confirmAction('send', ins)"
-                                    :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede' || viewFilter === 'sent'">Enviar</button>
-                                <button class="btn ghost delete" @click="confirmAction('delete', ins)"
-                                    v-if="viewFilter !== 'sent'">Apagar</button>
-                            </div>
-                        </div>
-                    </section>
+                    <InspectionList
+                        :items="filteredInspections"
+                        title="Listagem de Inspeções"
+                        id-prefix="adm-ins-"
+                        :show-continue="true"
+                        :show-send="true"
+                        :show-delete="true"
+                        :on-continue="(ins) => goToForm(ins)"
+                        :on-send="(ins) => confirmAction('send', ins)"
+                        :on-details="openDetails"
+                        :on-delete="(ins) => confirmAction('delete', ins)"
+                    />
                 </div>
             </div>
 
         </div>
-        <div v-if="detailModalVisible" class="modal-overlay">
-            <div class="modal details-modal">
-                <h3>Inspeção completa</h3>
-
-                <p><strong>ID:</strong> {{ detailTarget?.id }}</p>
-                <p><strong>Título:</strong> {{ detailTarget?.title }}</p>
-                <p><strong>Local:</strong> {{ detailTarget?.location || 'Não informado' }}</p>
-                <p><strong>Endereço:</strong> {{ detailTarget?.address || 'Não informado' }}</p>
-                <p><strong>Observações:</strong> {{ detailTarget?.notes || 'Não informado' }}</p>
-                <p><strong>Q1:</strong> {{ detailTarget?.q1 }}</p>
-                <p><strong>Q2:</strong> {{ detailTarget?.q2 }}</p>
-                <p><strong>Q3:</strong> {{ detailTarget?.q3 }}</p>
-                <p><strong>Q4:</strong> {{ detailTarget?.q4 }}</p>
-                <p><strong>Q5:</strong> {{ detailTarget?.q5 }}</p>
-                <p><strong>Q6:</strong> {{ detailTarget?.q6 }}</p>
-                <p><strong>Criada em:</strong> {{ detailTarget?.createdAt }}</p>
-
-                <div class="modal-actions">
-                    <button class="btn cancel" @click="closeDetails">Fechar</button>
-                </div>
-            </div>
-        </div>
+        <InspectionDetailsModal
+            :visible="detailModalVisible"
+            :inspection="detailTarget"
+            @close="closeDetails"
+        />
 
         <div v-if="createUserModalVisible" class="modal-overlay">
     <div class="modal">
@@ -227,6 +212,8 @@ import { saveInspection, getAllInspections, deleteInspection as deleteInspection
 import { syncInspections } from '../services/sync'
 import { getToken, getCurrentUserId, getInspectionsAPI, getUsuariosAPI, getInspecoesPorUsuarioAPI, criarUsuarioAPI } from '../services/api'
 import QuickGrid from './QuickGrid.vue'
+import InspectionDetailsModal from './InspectionDetailsModal.vue'
+import InspectionList from './InspectionList.vue'
 
 // Gerais
 const router = useRouter()
@@ -267,6 +254,9 @@ const workers = ref([])
 const loadingUsers = ref(false)
 const loadingUserInspections = ref(false)
 
+const activeMenu = ref(null)
+function toggleMenu(id) { activeMenu.value = activeMenu.value === id ? null : id }
+
 function normalizeUser(u) {
     return {
         id: u.id ?? u.Id,
@@ -283,6 +273,8 @@ function normalizeInspection(i) {
         id: i.id ?? i.Id,
         title: i.title ?? i.Title ?? i.titulo ?? 'Sem título',
         location: i.location ?? i.Location,
+        latitude: i.latitude ?? i.Latitude,
+        longitude: i.longitude ?? i.Longitude,
         address: i.address ?? i.Address,
         notes: i.notes ?? i.Notes,
         q1: i.q1 ?? i.Q1,
@@ -295,6 +287,23 @@ function normalizeInspection(i) {
         usuarioId: i.usuarioId ?? i.UsuarioId,
         status: i.status ?? 'Enviado'
     }
+}
+
+function statusLabel(ins) {
+    return ins.status || 'Enviado'
+}
+
+function normalizedStatus(ins) {
+    return String(ins?.status || 'Enviado').trim().toLowerCase()
+}
+
+function statusClass(ins) {
+    const value = normalizedStatus(ins)
+
+    if (value === 'enviado') return 'status--sent'
+    if (value.includes('aguard')) return 'status--waiting'
+    if (value.includes('não enviada') || value.includes('nao enviada') || value.includes('não enviado') || value.includes('nao enviado')) return 'status--draft'
+    return 'status--neutral'
 }
 
 async function carregarUsuarios() {
@@ -763,11 +772,7 @@ function cancelModal() {
     margin-top: 1rem;
 }
 
-.workers {
-    width: 100%;
-    border-collapse: collapse;
-    min-width: 600px;
-}
+.workers { width: 100%; border-collapse: collapse; min-width: unset; }
 
 .workers th {
     text-align: left;
@@ -904,7 +909,7 @@ function cancelModal() {
 }
 
 .inspection {
-    display: flex;
+    box-sizing: border-box; max-width: 100%; display: flex;
     justify-content: space-between;
     align-items: center;
     background: #fff;
@@ -937,12 +942,37 @@ function cancelModal() {
 }
 
 .inspection .status {
-    background: #f8f8f8;
-    padding: 0.25rem 0.5rem;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #444;
+    padding: 0.3rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.inspection .status--sent {
+    background: #e7f7ec;
+    color: #1f7a3f;
+    border-color: #bfe8cb;
+}
+
+.inspection .status--waiting {
+    background: #fff2de;
+    color: #a85d00;
+    border-color: #ffd29a;
+}
+
+.inspection .status--draft {
+    background: #ffe6e6;
+    color: #b42318;
+    border-color: #f5b4b4;
+}
+
+.inspection .status--neutral {
+    background: #f3f4f6;
+    color: #4b5563;
+    border-color: #e5e7eb;
 }
 
 .btn {
@@ -1124,8 +1154,82 @@ function cancelModal() {
         flex-direction: column;
     }
 
-    .workers {
-        /* mobile adjustments can go here if needed, or keeping default */
+}
+.table-wrap { overflow-x: auto; }
+
+.action-menu-container {
+    position: relative;
+    display: inline-block;
+}
+
+.dots-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 0.5rem;
+    color: #555;
+    font-weight: bold;
+}
+
+.action-menu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem;
+    gap: 0.5rem;
+    z-index: 100;
+    min-width: 120px;
+}
+
+.action-menu button {
+    width: 100%;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .workers thead {
+        display: none;
+    }
+    .workers, .workers tbody, .workers tr, .workers td {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+    }
+    .workers tr {
+        margin-bottom: 1rem;
+        background: #fff;
+        border: 1px solid #f2f2f4;
+        border-radius: 8px;
+        padding: 1rem;
+        position: relative;
+    }
+    .workers td {
+        border-bottom: none;
+        padding: 0.4rem 0;
+        text-align: right;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .workers td::before {
+        content: attr(data-label);
+        font-weight: bold;
+        color: #555;
+        text-align: left;
+    }
+    .workers td:last-child {
+        justify-content: flex-end;
+    }
+    .workers td:last-child::before {
+        display: none;
     }
 }
 </style>

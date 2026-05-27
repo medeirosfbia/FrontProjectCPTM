@@ -9,41 +9,72 @@
             </div>
 
             <div class="controls">
+                <input class="search-input" v-model="searchQuery" style="background:#fff; color:#333;" placeholder="Buscar por título..." />
                 <div v-if="loading" class="sync-message">Carregando inspeções do banco de dados...</div>
                 <div v-if="error" class="sync-message" style="color: red;">{{ error }}</div>
             </div>
 
             <div class="table-wrap app-table">
-                <div v-if="!loading && !inspections.length && !error" class="notice">
-                    Nenhuma inspeção enviada encontrada no banco de dados para o seu usuário.
+                <div v-if="!loading && !filteredInspections.length && !error" class="notice">
+                    Nenhuma inspeção encontrada.
                 </div>
 
-                <section v-if="inspections.length" class="list">
-                    <h2>Inspeções Sincronizadas ({{ inspections.length }})</h2>
-                    <div v-for="ins in inspections" :key="ins.id" class="inspection">
+                <section v-if="filteredInspections.length" class="list">
+                    <h2>Inspeções Sincronizadas ({{ filteredInspections.length }})</h2>
+                    <div v-for="ins in filteredInspections" :key="ins.id" class="inspection">
                         <div class="left">
                             <strong class="inspection-title">{{ ins.title || ins.titulo || 'Sem Título' }}</strong>
                             <div class="mono">ID: {{ ins.id }}</div>
                         </div>
-                        <div class="right">
+                        <div class="right" style="display: flex; gap: 8px; align-items: center;">
                             <div class="status">{{ ins.status || 'Enviado' }}</div>
+                            <button class="btn ghost btn-small" @click="openDetails(ins)">Ver mais</button>
                         </div>
                     </div>
                 </section>
             </div>
         </div>
+        <InspectionDetailsModal 
+            :visible="detailModalVisible" 
+            :inspection="detailTarget" 
+            @close="closeDetails" 
+        />
     </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getInspectionsAPI } from '../services/api'
+import InspectionDetailsModal from './InspectionDetailsModal.vue'
 
 const router = useRouter()
 const inspections = ref([])
 const loading = ref(true)
 const error = ref('')
+const searchQuery = ref('')
+const detailModalVisible = ref(false)
+const detailTarget = ref(null)
+
+const filteredInspections = computed(() => {
+    let q = searchQuery.value.trim().toLowerCase()
+    if (!q) return inspections.value
+    
+    return inspections.value.filter(i => {
+        const title = String(i.title || i.titulo || '').toLowerCase()
+        return title.includes(q)
+    })
+})
+
+function openDetails(ins) {
+    detailTarget.value = ins
+    detailModalVisible.value = true
+}
+
+function closeDetails() {
+    detailModalVisible.value = false
+    detailTarget.value = null
+}
 
 onMounted(async () => {
     try {
@@ -89,5 +120,14 @@ function goBack() {
     font-size: 1.5rem;
     cursor: pointer;
     margin-right: 15px;
+}
+.search-input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-bottom: 15px;
+    box-sizing: border-box;
 }
 </style>

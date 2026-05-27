@@ -174,6 +174,18 @@ export async function getUsuariosAPI() {
   return apiFetch('/Usuarios', { method: 'GET' })
 }
 
+export async function getUserByIdAPI(id) {
+  return apiFetch(`/Usuarios/${id}`, { method: 'GET' })
+}
+
+export async function updateUsuarioAPI(id, data) {
+  return apiFetch(`/Usuarios/${id}`, { method: 'PUT', body: data })
+}
+
+export async function deletarUsuarioAPI(id) {
+  return apiFetch(`/Usuarios/${id}`, { method: 'DELETE' })
+}
+
 export async function getInspecoesPorUsuarioAPI(usuarioId) {
   return apiFetch(`/Inspecoes/usuario/${usuarioId}`, { method: 'GET' })
 }
@@ -210,6 +222,9 @@ export default {
   getIsAdmin,
   getCurrentUserId,
   getUsuariosAPI,
+  getUserByIdAPI,
+  updateUsuarioAPI,
+  deletarUsuarioAPI,
   getInspecoesPorUsuarioAPI,
   criarUsuarioAPI,
   createInspectionAPI,

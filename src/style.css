@@ -102,4 +102,12 @@ html, body, #app {
 
 .main-content {
   padding: 1rem;
+}body, html {
+    overflow-x: hidden;
+    max-width: 100%;
+}
+#app {
+    overflow-x: hidden;
+    max-width: 100vw;
+    box-sizing: border-box;
 }

@@ -37,31 +37,32 @@
                     @setFilter="setFilter" 
                     @openNewInspection="openNewInspection" 
                 />
+                <input class="search-input" v-model="searchQuery" style="background: #fff; color: #333;" placeholder="Buscar por título..." />
             </div>
 
             <div class="table-wrap">
                 <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhuma inspeção neste filtro.</div>
                 <div v-if="loadingApi" class="notice" style="color:blue;">Sincronizando com o banco de dados...</div>
 
-                <section v-if="filteredInspections.length" class="list">
-                    <h2>Inspeções ({{ filteredInspections.length }})</h2>
-                    <div v-for="ins in filteredInspections" :key="ins.id" class="inspection">
-                        <div class="left">
-                            <strong class="inspection-title">{{ ins.title || ins.titulo || 'Sem título' }}</strong>
-                            <div class="mono">ID: {{ ins.id }}</div>
-                        </div>
-                        <div class="right">
-                            <div class="status">{{ ins.status || 'Enviado' }}</div>
-                            <button class="btn continue" @click="goToForm(ins)"
-                                :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede' || viewFilter === 'sent'">Continuar</button>
-                            <button class="btn send" @click="confirmAction('send', ins)"
-                                :disabled="ins.status === 'Enviado' || ins.status === 'Aguardando Rede' || viewFilter === 'sent'">Enviar</button>
-                            <button class="btn ghost delete" @click="confirmAction('delete', ins)" v-if="viewFilter !== 'sent'">Apagar</button>
-                        </div>
-                    </div>
-                </section>
+                <InspectionList
+                    :items="filteredInspections"
+                    title="Inspeções"
+                    id-prefix="user-ins-"
+                    :show-continue="true"
+                    :show-send="true"
+                    :show-delete="true"
+                    :on-continue="(ins) => goToForm(ins)"
+                    :on-send="(ins) => confirmAction('send', ins)"
+                    :on-details="openDetails"
+                    :on-delete="(ins) => confirmAction('delete', ins)"
+                />
             </div>
         </div>
+        <InspectionDetailsModal 
+            :visible="detailModalVisible" 
+            :inspection="detailTarget" 
+            @close="closeDetails" 
+        />
     </div>
 </template>
 
@@ -76,6 +77,8 @@ import { syncInspections } from '../services/sync'
 import { getToken, getInspectionsAPI } from '../services/api'
 import { Plus, Calendar, Send, ClipboardList, LogOut, User } from 'lucide-vue-next'
 import QuickGrid from './QuickGrid.vue'
+import InspectionDetailsModal from './InspectionDetailsModal.vue'
+import InspectionList from './InspectionList.vue'
 
 onMounted(async () => {
     try {
@@ -105,6 +108,46 @@ const viewFilter = ref('all')
 const router = useRouter()
 const sentApiData = ref([])
 const loadingApi = ref(false)
+
+const detailModalVisible = ref(false)
+const detailTarget = ref(null)
+
+const activeMenu = ref(null)
+function toggleMenu(id) {
+    activeMenu.value = activeMenu.value === id ? null : id
+}
+
+function openDetails(ins) {
+    detailTarget.value = normalizeInspection(ins)
+    detailModalVisible.value = true
+}
+
+function closeDetails() {
+    detailModalVisible.value = false
+    detailTarget.value = null
+}
+
+function normalizeInspection(i) {
+    return {
+        ...i,
+        id: i.id ?? i.Id,
+        title: i.title ?? i.Title ?? i.titulo ?? 'Sem título',
+        location: i.location ?? i.Location,
+        latitude: i.latitude ?? i.Latitude,
+        longitude: i.longitude ?? i.Longitude,
+        address: i.address ?? i.Address,
+        notes: i.notes ?? i.Notes,
+        q1: i.q1 ?? i.Q1,
+        q2: i.q2 ?? i.Q2,
+        q3: i.q3 ?? i.Q3,
+        q4: i.q4 ?? i.Q4,
+        q5: i.q5 ?? i.Q5,
+        q6: i.q6 ?? i.Q6,
+        createdAt: i.createdAt ?? i.CreatedAt,
+        usuarioId: i.usuarioId ?? i.UsuarioId,
+        status: i.status ?? 'Enviado'
+    }
+}
 
 // ✅ AGORA CRIA USANDO O STORE
 async function createInspection(returnObj = false) {
@@ -239,10 +282,14 @@ async function setFilter(key) {
     }
 }
 
+const searchQuery = ref('')
+
 // ✅ FILTRO AGORA USA STORE E MOSTRA TODAS
 const filteredInspections = computed(() => {
-    if (viewFilter.value === 'sent') return sentApiData.value
-    if (viewFilter.value === 'all') {
+    let result = []
+    if (viewFilter.value === 'sent') {
+        result = sentApiData.value
+    } else if (viewFilter.value === 'all') {
         const merged = [...inspections.value]
         const localIds = new Set(merged.map(i => String(i.id)))
         for (const s of sentApiData.value) {
@@ -250,11 +297,20 @@ const filteredInspections = computed(() => {
                 merged.push(s)
             }
         }
-        return merged.sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        result = merged.sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    } else if (viewFilter.value === 'scheduled') {
+        result = inspections.value.filter(i => i.status !== 'Enviado')
+    } else {
+        result = inspections.value
     }
-    if (viewFilter.value === 'scheduled')
-        return inspections.value.filter(i => i.status !== 'Enviado')
-    return inspections.value
+
+    const q = searchQuery.value.trim().toLowerCase()
+    if (!q) return result
+
+    return result.filter(i => {
+        const title = String(i.title || i.titulo || '').toLowerCase()
+        return title.includes(q)
+    })
 })
 
 
@@ -299,6 +355,19 @@ function cancelModal() {
 
 
 <style scoped>
+.search-input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ccc;
+    background: #fff;
+    color: #333;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-top: 15px; /* Added spacing from buttons above */
+    margin-bottom: 15px;
+    box-sizing: border-box;
+}
+
 /* Use user panel visual language */
 .container {
     min-height: 100vh;
@@ -415,8 +484,8 @@ function cancelModal() {
 
 .controls {
     display: flex;
+    flex-direction: column;
     gap: 1rem;
-    align-items: center
 }
 
 .quick-grid {
@@ -578,7 +647,7 @@ function cancelModal() {
 }
 
 .inspection {
-    display: flex;
+    box-sizing: border-box; max-width: 100%; display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem;
@@ -804,5 +873,41 @@ h1 {
     .table-wrap {
         padding: 0 0.5rem;
     }
+}
+.action-menu-container {
+    position: relative;
+    display: inline-block;
+}
+
+.dots-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 0.5rem;
+    color: #555;
+    font-weight: bold;
+}
+
+.action-menu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem;
+    gap: 0.5rem;
+    z-index: 100;
+    min-width: 120px;
+}
+
+.action-menu button {
+    width: 100%;
+    text-align: center;
 }
 </style>
