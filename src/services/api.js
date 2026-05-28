@@ -180,7 +180,33 @@ export async function getUserByIdAPI(id) {
 }
 
 export async function updateUsuarioAPI(id, data) {
-  return apiFetch(`/Usuarios/${id}`, { method: 'PUT', body: data })
+  const candidateRequests = [
+    { path: '/Usuarios', method: 'PUT', body: { ...data, id } },
+    { path: '/Usuarios', method: 'PATCH', body: { ...data, id } },
+    { path: `/Usuarios/${id}`, method: 'PUT' },
+    { path: `/Usuarios/${id}`, method: 'PATCH' },
+    { path: `/Usuarios/${id}`, method: 'POST' },
+    { path: `/Usuarios/editar/${id}`, method: 'PUT' },
+    { path: `/Usuarios/editar/${id}`, method: 'PATCH' },
+    { path: `/Usuarios/update/${id}`, method: 'PUT' },
+    { path: `/Usuarios/update/${id}`, method: 'PATCH' }
+  ]
+
+  let lastError = null
+
+  for (const request of candidateRequests) {
+    try {
+      return await apiFetch(request.path, { method: request.method, body: request.body || data })
+    } catch (err) {
+      lastError = err
+      const statusCode = Number(String(err?.message || '').match(/HTTP\s+(\d+)/)?.[1] || err?.response?.status || 0)
+      if (statusCode && statusCode !== 405) {
+        throw err
+      }
+    }
+  }
+
+  throw lastError || new Error('Não foi possível atualizar o usuário')
 }
 
 export async function deletarUsuarioAPI(id) {

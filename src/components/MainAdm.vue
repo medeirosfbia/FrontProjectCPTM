@@ -174,38 +174,47 @@
             @close="closeDetails"
         />
 
-        <div v-if="createUserModalVisible" class="modal-overlay">
+        <div v-if="userModalVisible" class="modal-overlay">
     <div class="modal">
-        <h3>Criar usuário</h3>
+        <h3>{{ userModalMode === 'edit' ? 'Editar usuário' : 'Criar usuário' }}</h3>
 
         <label class="field">
             <span>Nome</span>
-            <input v-model="newUser.nomeCompleto" type="text" placeholder="Ex: João da Silva"/>
+            <input v-model="userForm.nomeCompleto" type="text" placeholder="Ex: João da Silva"/>
         </label>
 
         <label class="field">
             <span>Email</span>
-            <input v-model="newUser.email" type="email" placeholder="Ex: joao@cptm.sp.gov.br"/>
+            <input v-model="userForm.email" type="email" placeholder="Ex: joao@cptm.sp.gov.br"/>
         </label>
 
         <label class="field">
             <span>Data de nascimento</span>
-            <input v-model="newUser.dataNascimento" type="date" />
+            <input v-model="userForm.dataNascimento" type="date" />
         </label>
 
+        <div v-if="userModalMode === 'edit'" class="password-hint">
+            Senha atual: ********
+        </div>
+
         <label class="field">
-            <span>Senha</span>
-            <input v-model="newUser.senha" type="password" placeholder="••••••••"/>
+            <span>{{ userModalMode === 'edit' ? 'Nova senha' : 'Senha' }}</span>
+            <input v-model="userForm.senhaNova" type="password" :placeholder="userModalMode === 'edit' ? 'Deixe em branco para manter a atual' : '••••••••'"/>
+        </label>
+
+        <label class="field" v-if="userModalMode === 'edit'">
+            <span>Confirmar nova senha</span>
+            <input v-model="userForm.confirmarSenha" type="password" placeholder="Repita a nova senha"/>
         </label>
 
         <label class="field checkbox-group">
-            <input v-model="newUser.isAdmin" type="checkbox" />
-            <span>Criar como administrador</span>
+            <input v-model="userForm.isAdmin" type="checkbox" />
+            <span>{{ userModalMode === 'edit' ? 'Manter como administrador' : 'Criar como administrador' }}</span>
         </label>
 
         <div class="modal-actions">
             <button class="btn cancel" @click="closeCreateUserModal">Cancelar</button>
-            <button class="btn confirm send" @click="salvarNovoUsuario">Salvar</button>
+            <button class="btn confirm send" @click="submitUserForm">{{ userModalMode === 'edit' ? 'Salvar alterações' : 'Salvar' }}</button>
         </div>
     </div>
 </div>
@@ -221,7 +230,7 @@ import { storeToRefs } from 'pinia'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
 import { deleteInspectionAPI } from '../services/api'
 import { syncInspections } from '../services/sync'
-import { getToken, getCurrentUserId, getInspectionsAPI, getUsuariosAPI, getInspecoesPorUsuarioAPI, criarUsuarioAPI } from '../services/api'
+import { getToken, getCurrentUserId, getInspectionsAPI, getUsuariosAPI, getInspecoesPorUsuarioAPI, criarUsuarioAPI, updateUsuarioAPI, deletarUsuarioAPI } from '../services/api'
 import QuickGrid from './QuickGrid.vue'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
 import InspectionList from './InspectionList.vue'
@@ -274,9 +283,30 @@ function normalizeUser(u) {
         id: u.id ?? u.Id,
         name: u.nomeCompleto ?? u.NomeCompleto ?? u.name ?? u.nome ?? 'Sem nome',
         email: u.email ?? u.Email ?? 'Sem email',
+        dataNascimento: formatDateForInput(u.dataNascimento ?? u.DataNascimento ?? u.birthDate ?? u.birth_date ?? u.nascimento ?? u.Nascimento ?? ''),
         isAdmin: u.isAdmin ?? u.IsAdmin ?? false,
         submissions: u.submissions ?? u.envios ?? 0
     }
+}
+
+function formatDateForInput(value) {
+    if (!value) return ''
+
+    const text = String(value).trim()
+    if (!text) return ''
+
+    const date = new Date(text)
+    if (!Number.isNaN(date.getTime())) {
+        const year = date.getFullYear()
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        return `${year}-${month}-${day}`
+    }
+
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (match) return `${match[1]}-${match[2]}-${match[3]}`
+
+    return text
 }
 
 function normalizeInspection(i) {
@@ -387,40 +417,143 @@ function sortBy(key) {
 }
 
 
-const createUserModalVisible = ref(false)
+const userModalVisible = ref(false)
+const userModalMode = ref('create')
+const editingUserId = ref(null)
 
-const newUser = ref({
+const userForm = ref({
     nomeCompleto: '',
     email: '',
     dataNascimento: '',
-    senha: '',
+    senhaNova: '',
+    confirmarSenha: '',
     isAdmin: false
 })
 
 function createUser() {
-    createUserModalVisible.value = true
-}
-
-function closeCreateUserModal() {
-    createUserModalVisible.value = false
-    newUser.value = {
+    userModalMode.value = 'create'
+    editingUserId.value = null
+    userForm.value = {
         nomeCompleto: '',
         email: '',
         dataNascimento: '',
-        senha: '',
+        senhaNova: '',
+        confirmarSenha: '',
+        isAdmin: false
+    }
+    userModalVisible.value = true
+}
+
+function closeCreateUserModal() {
+    userModalVisible.value = false
+    userModalMode.value = 'create'
+    editingUserId.value = null
+    userForm.value = {
+        nomeCompleto: '',
+        email: '',
+        dataNascimento: '',
+        senhaNova: '',
+        confirmarSenha: '',
         isAdmin: false
     }
 }
 
-async function salvarNovoUsuario() {
+function editUserBtn(w) {
+    openEditUserModal(w)
+}
+
+async function openEditUserModal(w) {
+    userModalMode.value = 'edit'
+    editingUserId.value = w.id
+
+    let fullUser = null
     try {
-        await criarUsuarioAPI(newUser.value)
+        fullUser = await getUserByIdAPI(w.id)
+    } catch (err) {
+        console.error('Falha ao buscar usuário completo para edição', err)
+    }
+
+    const source = fullUser && typeof fullUser === 'object' ? fullUser : w
+
+    userForm.value = {
+        nomeCompleto: source.nomeCompleto || source.NomeCompleto || source.name || source.nome || '',
+        email: source.email || source.Email || '',
+        dataNascimento: formatDateForInput(
+            source.dataNascimento || source.DataNascimento || source.birthDate || source.birth_date || source.nascimento || source.Nascimento || ''
+        ),
+        senhaNova: '',
+        confirmarSenha: '',
+        isAdmin: !!(source.isAdmin ?? source.IsAdmin)
+    }
+    userModalVisible.value = true
+}
+
+async function submitUserForm() {
+    try {
+        if (userModalMode.value === 'edit' && userForm.value.senhaNova) {
+            if (userForm.value.senhaNova !== userForm.value.confirmarSenha) {
+                throw new Error('A nova senha e a confirmação não conferem.')
+            }
+        }
+
+        if (userModalMode.value === 'edit') {
+            const payload = {
+                id: editingUserId.value,
+                nomeCompleto: userForm.value.nomeCompleto,
+                email: userForm.value.email,
+                dataNascimento: userForm.value.dataNascimento,
+                isAdmin: userForm.value.isAdmin
+            }
+
+            if (userForm.value.senhaNova) {
+                payload.senha = userForm.value.senhaNova
+            }
+
+            await updateUsuarioAPI(editingUserId.value, payload)
+            showToast('Usuário atualizado com sucesso.', 'success')
+        } else {
+            if (!userForm.value.senhaNova) {
+                throw new Error('Informe a senha para cadastrar o usuário.')
+            }
+
+            const payload = {
+                nomeCompleto: userForm.value.nomeCompleto,
+                email: userForm.value.email,
+                dataNascimento: userForm.value.dataNascimento,
+                senha: userForm.value.senhaNova,
+                isAdmin: userForm.value.isAdmin
+            }
+
+            await criarUsuarioAPI(payload)
+            showToast('Usuário criado com sucesso.', 'success')
+        }
+
         await carregarUsuarios()
         closeCreateUserModal()
-        status.value = 'Usuário criado com sucesso.'
     } catch (err) {
         console.error(err)
-        status.value = err.message || 'Erro ao criar usuário.'
+        const message = err.message || (userModalMode.value === 'edit' ? 'Erro ao atualizar usuário.' : 'Erro ao criar usuário.')
+        status.value = message
+        showToast(message, 'error')
+    }
+}
+
+async function deleteUserBtn(w) {
+    const confirmDelete = window.confirm(`Apagar o usuário ${w.name}?`)
+    if (!confirmDelete) return
+
+    try {
+        await deletarUsuarioAPI(w.id)
+        await carregarUsuarios()
+        showToast('Usuário apagado com sucesso.', 'success')
+        if (selectedUser.value && String(selectedUser.value.id) === String(w.id)) {
+            selectedUser.value = null
+        }
+    } catch (err) {
+        console.error(err)
+        const message = err.message || 'Erro ao apagar usuário.'
+        status.value = message
+        showToast(message, 'error')
     }
 }
 
