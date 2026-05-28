@@ -14,6 +14,15 @@
                 </div>
 
                 <div class="info-group">
+                    <h4>Foto</h4>
+                    <div v-if="photoLoading" class="photo-status">Carregando foto...</div>
+                    <div v-else-if="photoUrl" class="photo-wrap">
+                        <img :src="photoUrl" alt="Foto da inspeção" class="photo-image" />
+                    </div>
+                    <div v-else class="photo-status">Nenhuma foto disponível.</div>
+                </div>
+
+                <div class="info-group">
                     <h4>Respostas</h4>
                     <p><strong>Q1:</strong> {{ inspection?.q1 || inspection?.Q1 }}</p>
                     <p><strong>Q2:</strong> {{ inspection?.q2 || inspection?.Q2 }}</p>
@@ -53,7 +62,8 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { getInspectionImageBlobAPI } from '../services/api'
 
 const props = defineProps({
     visible: {
@@ -69,9 +79,62 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const fetchedAddress = ref('')
+const photoUrl = ref('')
+const photoLoading = ref(false)
+let photoObjectUrl = ''
 
 function close() {
     emit('close')
+}
+
+function clearPhotoUrl() {
+    if (photoObjectUrl) {
+        URL.revokeObjectURL(photoObjectUrl)
+        photoObjectUrl = ''
+    }
+    photoUrl.value = ''
+    photoLoading.value = false
+}
+
+function setPhotoFromBlob(blob) {
+    clearPhotoUrl()
+
+    if (!blob) return
+
+    photoObjectUrl = URL.createObjectURL(blob)
+    photoUrl.value = photoObjectUrl
+}
+
+async function loadInspectionPhoto() {
+    clearPhotoUrl()
+
+    const photo = props.inspection?.photo
+    if (photo instanceof Blob) {
+        setPhotoFromBlob(photo)
+        return
+    }
+
+    const directPhotoUrl = props.inspection?.photoUrl || props.inspection?.PhotoUrl
+    if (typeof directPhotoUrl === 'string' && directPhotoUrl.trim()) {
+        photoUrl.value = directPhotoUrl.trim()
+        return
+    }
+
+    const id = props.inspection?.serverId || props.inspection?.id || props.inspection?.Id
+    if (!id) return
+
+    photoLoading.value = true
+    try {
+        const blob = await getInspectionImageBlobAPI(id)
+        if (blob) setPhotoFromBlob(blob)
+    } catch (err) {
+        const message = String(err?.message || '')
+        if (!message.includes('404')) {
+            console.error('Erro ao carregar foto da inspeção:', err)
+        }
+    } finally {
+        photoLoading.value = false
+    }
 }
 
 // Format the date using Intl.DateTimeFormat
@@ -156,7 +219,22 @@ async function updateAddressFromCoords() {
 watch(() => props.visible, (newVal) => {
     if (newVal) {
         updateAddressFromCoords()
+        loadInspectionPhoto()
+    } else {
+        clearPhotoUrl()
     }
+})
+
+watch(() => props.inspection, () => {
+    if (props.visible) {
+        loadInspectionPhoto()
+    } else {
+        clearPhotoUrl()
+    }
+}, { deep: true })
+
+onBeforeUnmount(() => {
+    clearPhotoUrl()
 })
 
 </script>
@@ -234,6 +312,21 @@ watch(() => props.visible, (newVal) => {
     margin-bottom: 15px;
     padding-bottom: 15px;
     border-bottom: 1px solid #efefef;
+}
+.photo-wrap {
+    margin-top: 8px;
+}
+.photo-image {
+    width: 100%;
+    max-height: 260px;
+    object-fit: contain;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+    background: #fafafa;
+}
+.photo-status {
+    color: #6b7280;
+    font-size: 0.95rem;
 }
 .info-group:last-child {
     border-bottom: none;

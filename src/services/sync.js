@@ -5,7 +5,8 @@ import {
     createInspectionAPI,
     updateInspectionAPI,
     getInspectionsAPI,
-    getToken
+    getToken,
+    uploadInspectionImageAPI
 } from './api'
 
 let syncing = false 
@@ -55,6 +56,9 @@ export async function sendInspectionNow(inspection) {
         const payload = { ...inspection }
         delete payload.id
         delete payload.status
+        delete payload.photo
+        delete payload.photoName
+        delete payload.photoType
 
         // if serverId exists, try update, else create
         let serverRes = null
@@ -77,6 +81,18 @@ export async function sendInspectionNow(inspection) {
         // on success, set serverId
         const sid = serverRes?.id || serverRes?.serverId || serverRes?.data?.id
         if (sid) inspection.serverId = sid
+
+        // upload image separately if one exists in the local copy
+        if (sid && inspection.photo) {
+            try {
+                await uploadInspectionImageAPI(sid, inspection.photo)
+            } catch (imageErr) {
+                console.error('Erro ao enviar imagem da inspeção:', imageErr)
+                inspection.status = 'Aguardando Rede'
+                await saveInspection(inspection)
+                return inspection
+            }
+        }
 
         inspection.status = 'Enviado'
 

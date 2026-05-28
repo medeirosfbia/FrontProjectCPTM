@@ -1,3 +1,5 @@
+import { toRaw } from 'vue'
+
 let db
 
 const DB_NAME = "inspectionDB"
@@ -47,8 +49,11 @@ export async function saveInspection(data) {
         const tx = database.transaction(STORE_NAME, "readwrite")
         const store = tx.objectStore(STORE_NAME)
 
-        // Converter o objeto para um formato puro do JS, removendo Proxies(Vue) e dados não clonáveis que geram DataCloneError
-        const pureData = JSON.parse(JSON.stringify(data))
+        // Remove Proxy do Vue e preserva Blobs/Files para que a foto possa ficar salva no IndexedDB.
+        const rawData = toRaw(data)
+        const pureData = typeof structuredClone === 'function'
+            ? structuredClone(rawData)
+            : rawData
 
         const request = store.put(pureData)
 

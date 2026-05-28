@@ -49,6 +49,40 @@
               </div>
 
             </div>
+
+            <div v-if="currentPage === 1" class="row photo-row">
+              <label>Foto da inspeção</label>
+              <div class="photo-actions">
+                <button type="button" class="btn" @click="toggleCamera">
+                  {{ cameraActive ? 'Fechar câmera' : 'Abrir câmera' }}
+                </button>
+                <label class="btn file-btn">
+                  Escolher arquivo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    @change="onImageSelected"
+                    hidden
+                  />
+                </label>
+              </div>
+              <small class="photo-help">Use a câmera ou selecione uma imagem (máx. 20MB).</small>
+
+              <div v-if="cameraError" class="photo-error">{{ cameraError }}</div>
+
+              <div v-if="cameraActive" class="camera-panel">
+                <video ref="cameraVideo" autoplay playsinline class="camera-video"></video>
+                <div class="camera-controls">
+                  <button type="button" class="btn-primary" @click="captureFromCamera">Tirar foto</button>
+                  <button type="button" class="btn" @click="toggleCamera">Cancelar</button>
+                </div>
+              </div>
+
+              <div v-if="imagePreviewUrl" class="photo-preview-wrap">
+                <img :src="imagePreviewUrl" alt="Pré-visualização da foto" class="photo-preview" />
+              </div>
+            </div>
           </div>
 
           <!-- Pagination controls -->
@@ -97,6 +131,7 @@ import { computed } from 'vue'
 import { saveInspection } from '../services/db'
 import { getAllInspections } from '../services/db'
 import { syncInspections } from '../services/sync'
+import { sendInspectionNow } from '../services/sync'
 import { getToken, getIsAdmin, getInspectionsAPI, updateInspectionAPI } from '../services/api'
 import { watch } from 'vue'
 
@@ -114,6 +149,12 @@ const store = useInspectionStore()
 const isEditMode = computed(() => route.params.id !== 'new')
 const inspectionSource = ref('local')
 const loadedStatus = ref('')
+const imageFile = ref(null)
+const imagePreviewUrl = ref('')
+const cameraActive = ref(false)
+const cameraError = ref('')
+const cameraVideo = ref(null)
+const cameraStream = ref(null)
 
 // map refs
 const mapRef = ref(null)
@@ -154,8 +195,30 @@ const form = reactive({
   q5: '',
   q6: '',
   userEmail: '',
-  status: ''
+  status: '',
+  photo: null,
+  photoName: '',
+  photoType: ''
 })
+
+function setPhotoPreview(source) {
+  if (imagePreviewUrl.value && imagePreviewUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(imagePreviewUrl.value)
+  }
+
+  imagePreviewUrl.value = ''
+
+  if (!source) return
+
+  if (typeof source === 'string') {
+    imagePreviewUrl.value = source
+    return
+  }
+
+  if (source instanceof Blob) {
+    imagePreviewUrl.value = URL.createObjectURL(source)
+  }
+}
 
 // carregar inspeção existente
 onMounted(async () => {
@@ -171,6 +234,7 @@ onMounted(async () => {
     inspectionSource.value = 'local'
     loadedStatus.value = inspection.status || ''
     Object.assign(form, inspection)
+    setPhotoPreview(form.photo)
     return
   }
 
@@ -202,6 +266,7 @@ onMounted(async () => {
 
       loadedStatus.value = normalized.status || 'Enviado'
       Object.assign(form, normalized)
+      setPhotoPreview(form.photo)
     }
   } catch (err) {
     console.error('Erro ao carregar inspeção para edição', err)
@@ -217,6 +282,12 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  stopCamera()
+
+  if (imagePreviewUrl.value && imagePreviewUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(imagePreviewUrl.value)
+  }
+
   if (mapRef.value) {
     mapRef.value.remove()
     mapRef.value = null
@@ -246,6 +317,11 @@ watch(
       if (existing && existing.status === 'Aguardando Rede') {
         // keep awaiting status
         return
+      }
+
+      if (form.photo) {
+        form.photoType = form.photo.type || form.photoType || ''
+        form.photoName = form.photo.name || form.photoName || ''
       }
 
       const saved = await persistInspection(isEditMode.value ? (loadedStatus.value || form.status || 'Enviado') : "Não enviada")
@@ -371,17 +447,21 @@ async function submitForm() {
     return
   }
 
-  // attempt synchronization
+  // attempt synchronization / send now
   try {
-      await syncInspections()
+      const result = await sendInspectionNow({
+        ...form,
+        status: 'Aguardando Rede',
+        userEmail: form.userEmail || localStorage.getItem('user_email') || ''
+      })
 
-      // after sync, check whether this inspection was removed from local store (means success on backend)
-      const exists = store.inspections.find(i => i.id === form.id)
-      if (!exists) {
+      if (result && result.status === 'Enviado') {
         setStatus('Enviado com sucesso para o banco de dados Oracle!', 'success', 3500)
       } else {
         setStatus('Back-end inacessível! Salvo offline e tentaremos reenviar em breve.', 'warning', 6000)
       }
+
+      await syncInspections()
   } catch (err) {
       setStatus('Erro de conexão com o Back-end/Banco.', 'error', 6000)
   }
@@ -539,8 +619,13 @@ async function persistInspection(status = "Rascunho") {
   }
 
   if (isEditMode.value) {
+    const apiPayload = { ...payload }
+    delete apiPayload.photo
+    delete apiPayload.photoName
+    delete apiPayload.photoType
+
     if (inspectionSource.value === 'api') {
-      await updateInspectionAPI(payload.id, payload)
+      await updateInspectionAPI(payload.id, apiPayload)
     }
 
     await saveInspection(payload)
@@ -611,6 +696,109 @@ function updateMapFromInputs() {
     setMarker([form.latitude, form.longitude])
     mapRef.value.setView([form.latitude, form.longitude], 17)
   }
+}
+
+async function toggleCamera() {
+  cameraError.value = ''
+
+  if (cameraActive.value) {
+    stopCamera()
+    return
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    cameraError.value = 'Seu navegador não suporta acesso à câmera.'
+    return
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    })
+
+    cameraStream.value = stream
+    cameraActive.value = true
+
+    await nextTick()
+    if (cameraVideo.value) {
+      cameraVideo.value.srcObject = stream
+      await cameraVideo.value.play()
+    }
+  } catch (err) {
+    console.error('Erro ao abrir câmera:', err)
+    cameraError.value = 'Não foi possível acessar a câmera. Verifique as permissões do navegador.'
+  }
+}
+
+function stopCamera() {
+  cameraActive.value = false
+  cameraError.value = ''
+
+  if (cameraVideo.value) {
+    cameraVideo.value.srcObject = null
+  }
+
+  if (cameraStream.value) {
+    cameraStream.value.getTracks().forEach(track => track.stop())
+    cameraStream.value = null
+  }
+}
+
+async function captureFromCamera() {
+  if (!cameraVideo.value) return
+
+  const video = cameraVideo.value
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth || 1280
+  canvas.height = video.videoHeight || 720
+
+  const context = canvas.getContext('2d')
+  if (!context) {
+    cameraError.value = 'Não foi possível capturar a foto.'
+    return
+  }
+
+  context.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92))
+  if (!blob) {
+    cameraError.value = 'Não foi possível gerar a imagem capturada.'
+    return
+  }
+
+  const file = new File([blob], `inspecao_${Date.now()}.jpg`, { type: 'image/jpeg' })
+
+  imageFile.value = file
+  form.photo = file
+  form.photoName = file.name
+  form.photoType = file.type
+
+  setPhotoPreview(file)
+  stopCamera()
+}
+
+function onImageSelected(event) {
+  const file = event?.target?.files?.[0]
+  if (!file) return
+
+  if (!file.type || !file.type.startsWith('image/')) {
+    setStatus('Selecione um arquivo de imagem válido.', 'error', 4000)
+    return
+  }
+
+  const maxSize = 20 * 1024 * 1024
+  if (file.size > maxSize) {
+    setStatus('A imagem deve ter no máximo 20MB.', 'error', 4000)
+    return
+  }
+
+  imageFile.value = file
+  form.photo = file
+  form.photoName = file.name || ''
+  form.photoType = file.type || ''
+
+  setPhotoPreview(file)
 }
 </script>
 
@@ -747,6 +935,72 @@ function updateMapFromInputs() {
 .row {
   display: flex;
   flex-direction: column
+}
+
+.photo-row {
+  margin-top: 0.25rem;
+}
+
+.photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-help {
+  color: #6b7280;
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.photo-error {
+  margin-top: 0.5rem;
+  color: #b42318;
+  font-weight: 600;
+}
+
+.camera-panel {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.camera-video {
+  width: 100%;
+  max-width: 520px;
+  aspect-ratio: 4 / 3;
+  background: #0f172a;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  object-fit: cover;
+}
+
+.camera-controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.photo-preview-wrap {
+  margin-top: 0.65rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  max-width: 360px;
+}
+
+.photo-preview {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 .row.two {

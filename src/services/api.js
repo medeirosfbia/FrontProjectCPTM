@@ -1,4 +1,5 @@
 const BASE = 'http://127.0.0.1:5000/api'
+const INSPECTION_IMAGE_BASE = 'http://127.0.0.1:5000/api/inspecoes'
 
 export function getToken() {
   return localStorage.getItem('auth_token') || null
@@ -214,6 +215,48 @@ export async function deleteInspectionAPI(id) {
   return apiFetch(`/Inspecoes/${id}`, { method: 'DELETE' })
 }
 
+export async function uploadInspectionImageAPI(id, file) {
+  if (!file) throw new Error('Arquivo de imagem não informado')
+
+  const token = getToken()
+  if (!token) throw new Error('Usuário não autenticado')
+
+  const form = new FormData()
+  form.append('imagem', file)
+
+  const res = await fetch(`${INSPECTION_IMAGE_BASE}/${id}/imagem`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    body: form
+  })
+
+  if (!res.ok) {
+    const msg = await res.text()
+    throw new Error(msg || `Erro ao enviar imagem (${res.status})`)
+  }
+}
+
+export async function getInspectionImageBlobAPI(id) {
+  const token = getToken()
+  if (!token) throw new Error('Usuário não autenticado')
+
+  const res = await fetch(`${INSPECTION_IMAGE_BASE}/${id}/imagem`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  })
+
+  if (!res.ok) {
+    const msg = await res.text()
+    throw new Error(msg || `Erro ao buscar imagem (${res.status})`)
+  }
+
+  return res.blob()
+}
+
 export default {
   apiFetch,
   login,
@@ -230,5 +273,7 @@ export default {
   createInspectionAPI,
   getInspectionsAPI,
   updateInspectionAPI,
-  deleteInspectionAPI
+  deleteInspectionAPI,
+  uploadInspectionImageAPI,
+  getInspectionImageBlobAPI
 }
