@@ -5,8 +5,8 @@
         <div class="header-left">
           <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
           <div class="header-info">
-            <h1>Formulário de Inspeção</h1>
-            <p class="subtitle">Preencha e envie a inspeção</p>
+            <h1>{{ isEditMode ? 'Editar Inspeção' : 'Formulário de Inspeção' }}</h1>
+            <p class="subtitle">{{ isEditMode ? 'Altere os dados e salve a inspeção' : 'Preencha e envie a inspeção' }}</p>
           </div>
         </div>
         <div class="user-area">
@@ -63,7 +63,7 @@
           <div class="pagination arrows">
             <button type="button" class="btn" @click="prevPage" :disabled="currentPage === 0">Anterior</button>
             <button v-if="currentPage === totalPages - 1" type="button" class="btn-primary"
-              @click="submitForm">Enviar</button>
+              @click="submitForm">{{ isEditMode ? 'Salvar alterações' : 'Enviar' }}</button>
             <button v-else type="button" class="btn" @click="nextPage" :disabled="currentPage >= totalPages - 1">
               Próxima
             </button>
@@ -71,7 +71,7 @@
 
           <!-- Actions: submit on last page, otherwise Next also available -->
           <div class="actions">
-            <button type="button" class="btn draw" @click="saveDraft">Salvar rascunho</button>
+            <button type="button" class="btn draw" @click="saveDraft">{{ isEditMode ? 'Salvar alterações' : 'Salvar rascunho' }}</button>
             <button type="button" class="btn ghost" @click="cancel">Cancelar</button>
           </div>
 
@@ -97,7 +97,7 @@ import { computed } from 'vue'
 import { saveInspection } from '../services/db'
 import { getAllInspections } from '../services/db'
 import { syncInspections } from '../services/sync'
-import { getToken, getIsAdmin } from '../services/api'
+import { getToken, getIsAdmin, getInspectionsAPI, updateInspectionAPI } from '../services/api'
 import { watch } from 'vue'
 
 // Conserta os ícones do mapa Leaflet
@@ -111,6 +111,9 @@ L.Icon.Default.mergeOptions({
 const router = useRouter()
 const route = useRoute()
 const store = useInspectionStore()
+const isEditMode = computed(() => route.params.id !== 'new')
+const inspectionSource = ref('local')
+const loadedStatus = ref('')
 
 // map refs
 const mapRef = ref(null)
@@ -150,7 +153,8 @@ const form = reactive({
   q4: '',
   q5: '',
   q6: '',
-  userEmail: ''
+  userEmail: '',
+  status: ''
 })
 
 // carregar inspeção existente
@@ -159,12 +163,49 @@ onMounted(async () => {
   const inspections = await getAllInspections()
   store.inspections = inspections
 
-  if (inspectionId === "new") return
+  if (!isEditMode.value) return
 
-  const inspection = inspections.find(i => i.id === inspectionId)
+  let inspection = inspections.find(i => String(i.id) === String(inspectionId))
 
   if (inspection) {
+    inspectionSource.value = 'local'
+    loadedStatus.value = inspection.status || ''
     Object.assign(form, inspection)
+    return
+  }
+
+  try {
+    const res = await getInspectionsAPI()
+    const arr = Array.isArray(res) ? res : res?.data ?? []
+    inspection = arr.find(i => String(i.id ?? i.Id) === String(inspectionId))
+
+    if (inspection) {
+      inspectionSource.value = 'api'
+      const normalized = {
+        ...inspection,
+        id: inspection.id ?? inspection.Id,
+        title: inspection.title ?? inspection.Title ?? inspection.titulo ?? '',
+        location: inspection.location ?? inspection.Location ?? '',
+        address: inspection.address ?? inspection.Address ?? '',
+        latitude: inspection.latitude ?? inspection.Latitude ?? null,
+        longitude: inspection.longitude ?? inspection.Longitude ?? null,
+        notes: inspection.notes ?? inspection.Notes ?? '',
+        q1: inspection.q1 ?? inspection.Q1 ?? '',
+        q2: inspection.q2 ?? inspection.Q2 ?? '',
+        q3: inspection.q3 ?? inspection.Q3 ?? '',
+        q4: inspection.q4 ?? inspection.Q4 ?? '',
+        q5: inspection.q5 ?? inspection.Q5 ?? '',
+        q6: inspection.q6 ?? inspection.Q6 ?? '',
+        userEmail: inspection.userEmail ?? inspection.UserEmail ?? '',
+        status: inspection.status ?? 'Enviado'
+      }
+
+      loadedStatus.value = normalized.status || 'Enviado'
+      Object.assign(form, normalized)
+    }
+  } catch (err) {
+    console.error('Erro ao carregar inspeção para edição', err)
+    setStatus('Não foi possível carregar a inspeção para edição.', 'error', 5000)
   }
 
 })
@@ -195,6 +236,10 @@ watch(
 
     autosaveTimer = setTimeout(async () => {
 
+      if (!form.title || !form.title.trim()) {
+        return
+      }
+
       // If this inspection is already marked as Aguardando Rede in the store,
       // do not overwrite it back to 'Não enviada' (this would block sending).
       const existing = store.inspections.find(i => i.id === form.id)
@@ -203,9 +248,11 @@ watch(
         return
       }
 
-      await persistInspection("Não enviada")
+      const saved = await persistInspection(isEditMode.value ? (loadedStatus.value || form.status || 'Enviado') : "Não enviada")
 
-      setStatus('Salvo automaticamente', 'success', 2500)
+      if (saved) {
+        setStatus('Salvo automaticamente', 'success', 2500)
+      }
 
     }, 2000)
 
@@ -287,8 +334,13 @@ async function submitForm() {
   // avoid autosave racing with submit
   clearTimeout(autosaveTimer)
 
-  if (!form.title && !form.location) {
-    setStatus('Preencha ao menos Título ou Local.', 'error', 4000)
+  if (isEditMode.value) {
+    await saveDraft()
+    return
+  }
+
+  if (!form.title || !form.title.trim()) {
+    setStatus('Preencha o Título da inspeção.', 'error', 4000)
     return
   }
 
@@ -297,7 +349,12 @@ async function submitForm() {
   if (!form.id) form.id = "i" + Date.now()
 
   // persist as awaiting network (blocked until sync runs)
-  await persistInspection('Aguardando Rede')
+  const persisted = await persistInspection('Aguardando Rede')
+
+  if (!persisted) {
+    setStatus('Não foi possível salvar a inspeção sem título.', 'error', 4000)
+    return
+  }
 
   // if offline, notify user and return
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -467,14 +524,38 @@ function tryInitMap() {
 
 async function persistInspection(status = "Rascunho") {
 
+  if (!form.title || !form.title.trim()) {
+    return false
+  }
+
   if (!form.id) {
     form.id = "i" + Date.now()
   }
 
   const payload = {
     ...form,
-    status,
+    status: isEditMode.value ? (loadedStatus.value || form.status || status) : status,
     userEmail: form.userEmail || localStorage.getItem('user_email') || ''
+  }
+
+  if (isEditMode.value) {
+    if (inspectionSource.value === 'api') {
+      await updateInspectionAPI(payload.id, payload)
+    }
+
+    await saveInspection(payload)
+
+    const index = store.inspections.findIndex(i => i.id === payload.id)
+
+    if (index !== -1) {
+      store.inspections[index] = payload
+    } else {
+      store.inspections.push(payload)
+    }
+
+    loadedStatus.value = payload.status
+    form.status = payload.status
+    return true
   }
 
   await saveInspection(payload)
@@ -487,14 +568,21 @@ async function persistInspection(status = "Rascunho") {
     store.inspections.push(payload)
   }
 
+  return true
+
 }
 
 
 async function saveDraft() {
 
-  await persistInspection("Não enviada")
+  const saved = await persistInspection(isEditMode.value ? (loadedStatus.value || form.status || 'Enviado') : "Não enviada")
 
-  setStatus('Rascunho salvo', 'success', 2000)
+  if (!saved) {
+    setStatus('Preencha o Título da inspeção.', 'error', 4000)
+    return
+  }
+
+  setStatus(isEditMode.value ? 'Alterações salvas' : 'Rascunho salvo', 'success', 2000)
 
   returnToMain()
 }

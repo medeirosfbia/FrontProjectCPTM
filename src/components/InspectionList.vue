@@ -16,7 +16,7 @@
             <button v-if="showContinue && !isSent(ins)" class="btn" @click="onContinue && onContinue(ins); close()">Continuar</button>
             <button v-if="showSend && !isSent(ins)" class="btn" :style="sendStyle" @click="onSend && onSend(ins); close()">Enviar</button>
             <button v-if="showDetails" class="btn" @click="onDetails && onDetails(ins); close()">Ver mais</button>
-            <button v-if="showDelete" class="btn" :style="deleteStyle" @click="onDelete && onDelete(ins); close()">Apagar</button>
+            <button v-if="showDelete && (allowDeleteSent || !isSent(ins))" class="btn" :style="deleteStyle" @click="onDelete && onDelete(ins); close()">Apagar</button>
           </div>
         </div>
       </div>
@@ -35,6 +35,7 @@ const props = defineProps({
   showSend: { type: Boolean, default: false },
   showDetails: { type: Boolean, default: true },
   showDelete: { type: Boolean, default: false },
+  allowDeleteSent: { type: Boolean, default: false },
   onContinue: Function,
   onSend: Function,
   onDetails: Function,

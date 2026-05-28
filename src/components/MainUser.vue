@@ -1,6 +1,7 @@
 <template>
     <div class="container">
         <div class="user-screen">
+            <div v-if="toastVisible" :class="['toast', toastType]">{{ toastMessage }}</div>
             <div class="user-header">
                 <div class="header-left">
                     <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
@@ -181,6 +182,18 @@ function goToSentInspections() {
 }
 
 const status = ref('')
+const toastMessage = ref('')
+const toastType = ref('')
+const toastVisible = ref(false)
+
+function showToast(msg, type = 'success', duration = 3000) {
+    toastMessage.value = msg
+    toastType.value = type
+    toastVisible.value = true
+    setTimeout(() => {
+        toastVisible.value = false
+    }, duration)
+}
 
 async function sendInspection(ins) {
     const idx = store.inspections.findIndex(i => i.id === ins.id)
@@ -233,15 +246,12 @@ function goToForm(ins) {
 async function deleteInspection(ins) {
 
     try {
-
         await deleteInspectionDB(ins.id)
-
         store.inspections = store.inspections.filter(i => i.id !== ins.id)
-
+        showToast('Inspeção apagada localmente.', 'success')
     } catch (err) {
-
         console.error("Erro ao apagar inspeção", err)
-
+        showToast('Erro ao apagar inspeção localmente.', 'error')
     }
 
 }
@@ -405,6 +415,21 @@ function cancelModal() {
     align-items: center;
     gap: 1rem;
 }
+
+/* Toast */
+.toast {
+    position: fixed;
+    right: 20px;
+    top: 20px;
+    z-index: 9999;
+    padding: 0.6rem 0.9rem;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 6px 18px rgba(16,24,40,0.12);
+}
+.toast.success { background: #16a34a }
+.toast.error { background: #ef4444 }
 
 .sync-message {
     margin-bottom: 0.75rem;

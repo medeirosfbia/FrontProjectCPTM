@@ -1,6 +1,7 @@
 <template>
     <div class="container">
         <div class="admin-screen">
+                <div v-if="toastVisible" :class="['toast', toastType]">{{ toastMessage }}</div>
             <div class="user-header">
                 <div class="header-left">
                     <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
@@ -27,6 +28,21 @@
                     @click="setTab('my-inspections')">
                     Minhas Inspeções
                 </button>
+            </div>
+
+            <!-- Modal de confirmação global -->
+            <div v-if="modalVisible" class="modal-overlay" role="dialog" aria-modal="true">
+                <div class="modal">
+                    <h3>{{ modalAction === 'delete' ? 'Confirmar exclusão' : 'Confirmar envio' }}</h3>
+                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} a inspeção "{{
+                        modalTarget?.title }}"?</p>
+                    <div class="modal-actions">
+                        <button class="btn cancel" @click="cancelModal">Cancelar</button>
+                        <button v-if="modalAction == 'delete'" class="btn confirm delete" @click="confirmModal">Sim,
+                            apagar</button>
+                        <button v-else class="btn confirm send" @click="confirmModal">Sim, enviar</button>
+                    </div>
+                </div>
             </div>
 
             <!-- TAB: USUÁRIOS -->
@@ -64,6 +80,8 @@
                                         <button class="btn-small dots-btn" @click.stop="toggleMenu('ins-' + ins.id)">⋮</button>
                                         <div class="action-menu" v-if="activeMenu === ('ins-' + ins.id)">
                                             <button class="btn" @click="openDetails(ins); toggleMenu(null)">Ver Inteira</button>
+                                            <button class="btn" style="background:#f2c036;color:#333;" @click="goToEditInspection(ins); toggleMenu(null)">Editar</button>
+                                            <button class="btn" style="background:#dc1c22;color:#fff;" @click="confirmAction('delete', ins); toggleMenu(null)">Apagar</button>
                                         </div>
                                     </div>
                                 </div>
@@ -117,21 +135,6 @@
 
             <!-- TAB: MINHAS INSPEÇÕES (Estilo App Usuário Normal) -->
             <div v-if="currentTab === 'my-inspections'">
-                <!-- Modal de confirmação -->
-                <div v-if="modalVisible" class="modal-overlay" role="dialog" aria-modal="true">
-                    <div class="modal">
-                        <h3>{{ modalAction === 'delete' ? 'Confirmar exclusão' : 'Confirmar envio' }}</h3>
-                        <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} a inspeção "{{
-                            modalTarget?.title }}"?</p>
-                        <div class="modal-actions">
-                            <button class="btn cancel" @click="cancelModal">Cancelar</button>
-                            <button v-if="modalAction == 'delete'" class="btn confirm delete" @click="confirmModal">Sim,
-                                apagar</button>
-                            <button v-else class="btn confirm send" @click="confirmModal">Sim, enviar</button>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="app-controls">
                     <div v-if="status" class="sync-message">{{ status }}</div>
                     <QuickGrid 
@@ -155,6 +158,7 @@
                         :show-continue="true"
                         :show-send="true"
                         :show-delete="true"
+                        :allow-delete-sent="true"
                         :on-continue="(ins) => goToForm(ins)"
                         :on-send="(ins) => confirmAction('send', ins)"
                         :on-details="openDetails"
@@ -215,6 +219,7 @@ import { useRouter } from 'vue-router'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
+import { deleteInspectionAPI } from '../services/api'
 import { syncInspections } from '../services/sync'
 import { getToken, getCurrentUserId, getInspectionsAPI, getUsuariosAPI, getInspecoesPorUsuarioAPI, criarUsuarioAPI } from '../services/api'
 import QuickGrid from './QuickGrid.vue'
@@ -450,6 +455,18 @@ const status = ref('')
 const loadingApi = ref(false)
 const sentApiData = ref([])
 
+// Toast
+const toastMessage = ref('')
+const toastType = ref('')
+const toastVisible = ref(false)
+
+function showToast(msg, type = 'success', duration = 3000) {
+    toastMessage.value = msg
+    toastType.value = type
+    toastVisible.value = true
+    setTimeout(() => { toastVisible.value = false }, duration)
+}
+
 
 onMounted(async () => {
     await carregarUsuarios()
@@ -534,6 +551,10 @@ function goToForm(ins) {
     router.push(`/form/${ins.id}`)
 }
 
+function goToEditInspection(ins) {
+    router.push(`/edit-inspection/${ins.id}`)
+}
+
 async function sendInspection(ins) {
     const idx = store.inspections.findIndex(i => i.id === ins.id)
     try {
@@ -569,8 +590,32 @@ async function sendInspection(ins) {
 
 async function deleteInspection(ins) {
     try {
-        await deleteInspectionDB(ins.id)
-        store.inspections = store.inspections.filter(i => i.id !== ins.id)
+        const idStr = String(ins.id)
+
+        const localIdx = store.inspections.findIndex(i => String(i.id) === idStr)
+
+        if (localIdx >= 0) {
+            // local item: remove from IndexedDB and store
+            try {
+                await deleteInspectionDB(ins.id)
+                store.inspections = store.inspections.filter(i => String(i.id) !== idStr)
+                showToast('Inspeção apagada localmente.', 'success')
+            } catch (e) {
+                console.error('Erro ao apagar localmente', e)
+                showToast('Erro ao apagar localmente.', 'error')
+            }
+        } else {
+            // server item: attempt backend delete then remove from sentApiData
+            try {
+                await deleteInspectionAPI(idStr)
+                sentApiData.value = sentApiData.value.filter(i => String(i.id) !== idStr)
+                showToast('Inspeção apagada do servidor.', 'success')
+            } catch (e) {
+                console.error('Erro ao apagar no servidor', e)
+                status.value = 'Não foi possível apagar do servidor.'
+                showToast('Erro ao apagar no servidor.', 'error')
+            }
+        }
     } catch (err) {
         console.error("Erro ao apagar inspeção", err)
     }
@@ -655,6 +700,21 @@ function cancelModal() {
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
     border: 1px solid #f0f0f0;
 }
+
+/* Toast */
+.toast {
+    position: fixed;
+    right: 20px;
+    top: 20px;
+    z-index: 9999;
+    padding: 0.6rem 0.9rem;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 6px 18px rgba(16,24,40,0.12);
+}
+.toast.success { background: #16a34a }
+.toast.error { background: #ef4444 }
 
 .header-left {
     display: flex;

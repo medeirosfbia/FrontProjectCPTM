@@ -14,6 +14,7 @@ const routes = [
   { path: '/main-admin', component: MainAdm, meta: { requiresAuth: true } },
   { path: '/main-user', component: MainUser, meta: { requiresAuth: true } },
   { path: '/form/:id', component: Form, props: true, meta: { requiresAuth: true } },
+  { path: '/edit-inspection/:id', component: Form, props: true, meta: { requiresAuth: true } },
   { path: '/create-user', component: UserCreation, meta: { requiresAuth: true } },
   { path: '/sent-inspections', component: SentInspections, meta: { requiresAuth: true } }
 ]

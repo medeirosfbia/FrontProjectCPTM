@@ -79,10 +79,9 @@ export async function sendInspectionNow(inspection) {
         if (sid) inspection.serverId = sid
 
         inspection.status = 'Enviado'
-        await saveInspection(inspection)
 
-        // delete local copy since server has it
-        // try { await deleteInspection(inspection.id) } catch (e) { /* ignore */ }
+        // remove local copy once the server accepted it
+        try { await deleteInspection(inspection.id) } catch (e) { /* ignore */ }
 
         // return server-side info (include serverId)
         return { ...inspection, status: 'Enviado', serverId: sid }
@@ -147,22 +146,14 @@ export async function syncInspections() {
                         for (const s of serverItems) {
                             try {
 
-                                const exists = store.inspections.find(
-                                    i => i.serverId === s.id
-                                )
+                                const exists = store.inspections.find(i => i.serverId === s.id || String(i.id) === String(s.id))
 
                                 if (exists) continue
-                                // create local representation; use prefixed id to avoid collision with local ids
 
-                                const localId = `s${s.id}`
+                                const localObj = { ...s, serverId: s.id, status: 'Enviado' }
 
-                                const localObj = { ...s, id: localId, serverId: s.id, status: 'Enviado' }
-
-                                // persist to IndexedDB
-                                try { await saveInspection(localObj) } catch (e) { /* ignore */ }
-
-                                // update pinia store
-                                const idx2 = store.inspections.findIndex(i => i.id === localId || i.serverId === s.id)
+                                // keep server items only in memory so IndexedDB stays as offline cache
+                                const idx2 = store.inspections.findIndex(i => i.serverId === s.id || String(i.id) === String(s.id))
                                 if (idx2 >= 0) store.inspections[idx2] = { ...localObj }
                                 else store.inspections.push({ ...localObj })
                             } catch (e) {
@@ -175,6 +166,19 @@ export async function syncInspections() {
         } catch (e) {
             // ignore server fetch errors
         }
+
+        try {
+            const localItems = await getAllInspections()
+            for (const item of localItems || []) {
+                const status = String(item?.status || '').trim().toLowerCase()
+                if (status === 'enviado' || item.serverId) {
+                    try { await deleteInspection(item.id) } catch (e) { /* ignore */ }
+                }
+            }
+        } catch (e) {
+            // ignore cleanup errors
+        }
+
         const refreshed = await getAllInspections()
         store.inspections = [...refreshed]
 
