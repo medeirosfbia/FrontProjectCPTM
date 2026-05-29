@@ -57,17 +57,18 @@
                   {{ cameraActive ? 'Fechar câmera' : 'Abrir câmera' }}
                 </button>
                 <label class="btn file-btn">
-                  Escolher arquivo
+                  Escolher arquivos
                   <input
                     type="file"
                     accept="image/*"
                     capture="environment"
-                    @change="onImageSelected"
+                    multiple
+                    @change="onImagesSelected"
                     hidden
                   />
                 </label>
               </div>
-              <small class="photo-help">Use a câmera ou selecione uma imagem (máx. 20MB).</small>
+              <small class="photo-help">Use a câmera ou selecione uma ou mais imagens (máx. 20MB por arquivo).</small>
 
               <div v-if="cameraError" class="photo-error">{{ cameraError }}</div>
 
@@ -79,8 +80,15 @@
                 </div>
               </div>
 
-              <div v-if="imagePreviewUrl" class="photo-preview-wrap">
-                <img :src="imagePreviewUrl" alt="Pré-visualização da foto" class="photo-preview" />
+              <div v-if="imagePreviewUrls.length" class="photo-preview-grid">
+                <div v-for="(previewUrl, index) in imagePreviewUrls" :key="`${previewUrl}-${index}`" class="photo-preview-item">
+                  <img :src="previewUrl" :alt="`Pré-visualização da foto ${index + 1}`" class="photo-preview" />
+                  <button type="button" class="photo-remove-btn" @click="removePhoto(index)">Remover</button>
+                </div>
+              </div>
+
+              <div v-if="photoFiles.length" class="photo-count">
+                {{ photoFiles.length }} foto(s) adicionada(s)
               </div>
             </div>
           </div>
@@ -149,8 +157,8 @@ const store = useInspectionStore()
 const isEditMode = computed(() => route.params.id !== 'new')
 const inspectionSource = ref('local')
 const loadedStatus = ref('')
-const imageFile = ref(null)
-const imagePreviewUrl = ref('')
+const photoFiles = ref([])
+const imagePreviewUrls = ref([])
 const cameraActive = ref(false)
 const cameraError = ref('')
 const cameraVideo = ref(null)
@@ -197,27 +205,76 @@ const form = reactive({
   userEmail: '',
   status: '',
   photo: null,
+  photos: [],
   photoName: '',
   photoType: ''
 })
 
-function setPhotoPreview(source) {
-  if (imagePreviewUrl.value && imagePreviewUrl.value.startsWith('blob:')) {
-    URL.revokeObjectURL(imagePreviewUrl.value)
+function revokePhotoPreviews() {
+  for (const previewUrl of imagePreviewUrls.value) {
+    if (typeof previewUrl === 'string' && previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(previewUrl)
+    }
+  }
+}
+
+function syncPhotoFields() {
+  const files = [...photoFiles.value]
+  form.photos = files
+  form.photo = files[0] || null
+  form.photoName = form.photo?.name || ''
+  form.photoType = form.photo?.type || ''
+}
+
+function setPhotoPreviews(sources = []) {
+  revokePhotoPreviews()
+  imagePreviewUrls.value = []
+
+  const items = Array.isArray(sources) ? sources : [sources]
+  for (const source of items) {
+    if (!source) continue
+
+    if (typeof source === 'string') {
+      imagePreviewUrls.value.push(source)
+      continue
+    }
+
+    if (source instanceof Blob) {
+      imagePreviewUrls.value.push(URL.createObjectURL(source))
+    }
+  }
+}
+
+function setPhotos(sources = []) {
+  photoFiles.value = Array.isArray(sources) ? sources.filter(Boolean) : [sources].filter(Boolean)
+  syncPhotoFields()
+  setPhotoPreviews(photoFiles.value)
+}
+
+function addPhotos(files = []) {
+  const incomingFiles = Array.isArray(files) ? files : [files]
+  const validFiles = []
+
+  for (const file of incomingFiles) {
+    if (!file) continue
+
+    if (!file.type || !file.type.startsWith('image/')) {
+      setStatus('Selecione apenas arquivos de imagem.', 'error', 4000)
+      continue
+    }
+
+    const maxSize = 20 * 1024 * 1024
+    if (file.size > maxSize) {
+      setStatus(`A imagem ${file.name || ''} deve ter no máximo 20MB.`, 'error', 4000)
+      continue
+    }
+
+    validFiles.push(file)
   }
 
-  imagePreviewUrl.value = ''
+  if (!validFiles.length) return
 
-  if (!source) return
-
-  if (typeof source === 'string') {
-    imagePreviewUrl.value = source
-    return
-  }
-
-  if (source instanceof Blob) {
-    imagePreviewUrl.value = URL.createObjectURL(source)
-  }
+  setPhotos([...photoFiles.value, ...validFiles])
 }
 
 // carregar inspeção existente
@@ -234,7 +291,11 @@ onMounted(async () => {
     inspectionSource.value = 'local'
     loadedStatus.value = inspection.status || ''
     Object.assign(form, inspection)
-    setPhotoPreview(form.photo)
+    setPhotos(Array.isArray(inspection.photos) && inspection.photos.length
+      ? inspection.photos
+      : inspection.photo
+        ? [inspection.photo]
+        : [])
     return
   }
 
@@ -266,7 +327,11 @@ onMounted(async () => {
 
       loadedStatus.value = normalized.status || 'Enviado'
       Object.assign(form, normalized)
-      setPhotoPreview(form.photo)
+      setPhotos(Array.isArray(normalized.photos) && normalized.photos.length
+        ? normalized.photos
+        : normalized.photo
+          ? [normalized.photo]
+          : [])
     }
   } catch (err) {
     console.error('Erro ao carregar inspeção para edição', err)
@@ -284,9 +349,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopCamera()
 
-  if (imagePreviewUrl.value && imagePreviewUrl.value.startsWith('blob:')) {
-    URL.revokeObjectURL(imagePreviewUrl.value)
-  }
+  revokePhotoPreviews()
 
   if (mapRef.value) {
     mapRef.value.remove()
@@ -317,11 +380,6 @@ watch(
       if (existing && existing.status === 'Aguardando Rede') {
         // keep awaiting status
         return
-      }
-
-      if (form.photo) {
-        form.photoType = form.photo.type || form.photoType || ''
-        form.photoName = form.photo.name || form.photoName || ''
       }
 
       const saved = await persistInspection(isEditMode.value ? (loadedStatus.value || form.status || 'Enviado') : "Não enviada")
@@ -614,6 +672,7 @@ async function persistInspection(status = "Rascunho") {
 
   const payload = {
     ...form,
+    photos: [...photoFiles.value],
     status: isEditMode.value ? (loadedStatus.value || form.status || status) : status,
     userEmail: form.userEmail || localStorage.getItem('user_email') || ''
   }
@@ -621,6 +680,7 @@ async function persistInspection(status = "Rascunho") {
   if (isEditMode.value) {
     const apiPayload = { ...payload }
     delete apiPayload.photo
+    delete apiPayload.photos
     delete apiPayload.photoName
     delete apiPayload.photoType
 
@@ -769,36 +829,27 @@ async function captureFromCamera() {
 
   const file = new File([blob], `inspecao_${Date.now()}.jpg`, { type: 'image/jpeg' })
 
-  imageFile.value = file
-  form.photo = file
-  form.photoName = file.name
-  form.photoType = file.type
-
-  setPhotoPreview(file)
+  addPhotos([file])
   stopCamera()
 }
 
-function onImageSelected(event) {
-  const file = event?.target?.files?.[0]
-  if (!file) return
+function onImagesSelected(event) {
+  const files = Array.from(event?.target?.files || [])
+  if (!files.length) return
 
-  if (!file.type || !file.type.startsWith('image/')) {
-    setStatus('Selecione um arquivo de imagem válido.', 'error', 4000)
-    return
+  addPhotos(files)
+
+  if (event?.target) {
+    event.target.value = ''
   }
+}
 
-  const maxSize = 20 * 1024 * 1024
-  if (file.size > maxSize) {
-    setStatus('A imagem deve ter no máximo 20MB.', 'error', 4000)
-    return
-  }
+function removePhoto(index) {
+  if (index < 0 || index >= photoFiles.value.length) return
 
-  imageFile.value = file
-  form.photo = file
-  form.photoName = file.name || ''
-  form.photoType = file.type || ''
-
-  setPhotoPreview(file)
+  const nextFiles = [...photoFiles.value]
+  nextFiles.splice(index, 1)
+  setPhotos(nextFiles)
 }
 </script>
 
@@ -997,10 +1048,41 @@ function onImageSelected(event) {
   max-width: 360px;
 }
 
+.photo-preview-grid {
+  margin-top: 0.65rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.photo-preview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .photo-preview {
   width: 100%;
   height: auto;
   display: block;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  object-fit: cover;
+}
+
+.photo-remove-btn {
+  border: none;
+  background: #f3f4f6;
+  color: #991b1b;
+  border-radius: 8px;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+}
+
+.photo-count {
+  margin-top: 0.65rem;
+  color: #666;
+  font-size: 0.95rem;
 }
 
 .row.two {

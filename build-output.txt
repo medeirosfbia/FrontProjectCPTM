@@ -1,0 +1,24 @@
+
+> front1-cptm@0.0.0 build
+> vite build
+
+[36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 1778 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mmanifest.webmanifest                        [39m[1m[2m  0.35 kB[22m[1m[22m
+[2mdist/[22m[32mindex.html                                  [39m[1m[2m  0.52 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+[2mdist/[22m[32massets/cptm_logo-DBWRZqh0.png               [39m[1m[2m 22.24 kB[22m[1m[22m
+[2mdist/[22m[32massets/cptm_logo_simples-SmtReElO.png       [39m[1m[2m109.66 kB[22m[1m[22m
+[2mdist/[22m[35massets/index-DKOHDhOT.css                   [39m[1m[2m 51.26 kB[22m[1m[22m[2m │ gzip:  12.61 kB[22m
+[2mdist/[22m[36massets/workbox-window.prod.es5-BIl4cyR9.js  [39m[1m[2m  5.76 kB[22m[1m[22m[2m │ gzip:   2.37 kB[22m
+[2mdist/[22m[36massets/index-gp5pmHd0.js                    [39m[1m[2m316.94 kB[22m[1m[22m[2m │ gzip: 106.96 kB[22m
+[32m✓ built in 6.82s[39m
+
+PWA v1.2.0
+mode      generateSW
+precache  9 entries (498.00 KiB)
+files generated
+  dist/sw.js
+  dist/workbox-66610c77.js

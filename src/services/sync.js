@@ -82,10 +82,18 @@ export async function sendInspectionNow(inspection) {
         const sid = serverRes?.id || serverRes?.serverId || serverRes?.data?.id
         if (sid) inspection.serverId = sid
 
-        // upload image separately if one exists in the local copy
-        if (sid && inspection.photo) {
+        // upload images separately if any exist in the local copy
+        const photos = Array.isArray(inspection.photos) && inspection.photos.length
+            ? inspection.photos
+            : inspection.photo
+                ? [inspection.photo]
+                : []
+
+        if (sid && photos.length) {
             try {
-                await uploadInspectionImageAPI(sid, inspection.photo)
+                for (const photo of photos) {
+                    await uploadInspectionImageAPI(sid, photo)
+                }
             } catch (imageErr) {
                 console.error('Erro ao enviar imagem da inspeção:', imageErr)
                 inspection.status = 'Aguardando Rede'
