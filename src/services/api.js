@@ -1,5 +1,8 @@
-const BASE = 'http://127.0.0.1:5000/api'
-const INSPECTION_IMAGE_BASE = 'http://127.0.0.1:5000/api/inspecoes'
+import { normalizeApiEfluenteListItem } from './efluenteModel'
+
+export const API_ORIGIN = 'http://localhost:5000'
+const BASE = `${API_ORIGIN}/api`
+const EFLUENTES_BASE = `${BASE}/efluentes`
 
 export function getToken() {
   return localStorage.getItem('auth_token') || null
@@ -14,8 +17,7 @@ function decodeJwtPayload(token) {
   try {
     const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/')
     const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4)
-    const json = atob(padded)
-    return JSON.parse(json)
+    return JSON.parse(atob(padded))
   } catch {
     return null
   }
@@ -40,7 +42,6 @@ function inferIsAdmin(res, token) {
   const payload = decodeJwtPayload(token)
   if (!payload) return null
 
-  // ASP.NET JWT often maps role to this URI claim.
   const claimRole = payload.role
     ?? payload.roles
     ?? payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role']
@@ -99,11 +100,6 @@ export function logout() {
   localStorage.removeItem('user_email')
 }
 
-/**
- * Generic fetch wrapper that injects Authorization and JSON headers.
- * path: string starting with / (e.g. '/Inspecoes')
- * options: fetch options
- */
 export async function apiFetch(path, options = {}) {
   const url = BASE + path
   const headers = new Headers(options.headers || {})
@@ -111,15 +107,14 @@ export async function apiFetch(path, options = {}) {
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
-  // set JSON content-type if body is present and not FormData
-  if (options.body && !(options.body instanceof FormData)) {
+  const requestOptions = { ...options }
+  if (requestOptions.body && !(requestOptions.body instanceof FormData)) {
     if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
-    if (typeof options.body !== 'string') options.body = JSON.stringify(options.body)
+    if (typeof requestOptions.body !== 'string') requestOptions.body = JSON.stringify(requestOptions.body)
   }
 
-  const res = await fetch(url, { ...options, headers })
+  const res = await fetch(url, { ...requestOptions, headers })
 
-  // auto-logout on 401
   if (res.status === 401) {
     logout()
     throw new Error('Unauthorized')
@@ -127,7 +122,7 @@ export async function apiFetch(path, options = {}) {
 
   const text = await res.text()
   let data = null
-  try { data = text ? JSON.parse(text) : null } catch (e) { data = text }
+  try { data = text ? JSON.parse(text) : null } catch { data = text }
 
   if (!res.ok) {
     const err = new Error(data && data.message ? data.message : `HTTP ${res.status}`)
@@ -138,17 +133,15 @@ export async function apiFetch(path, options = {}) {
   return data
 }
 
-/* AUTH */
 export async function login(email, password) {
   const res = await apiFetch('/Usuarios/login', {
     method: 'POST',
-    body: { 
-        "email": email,
-        "senha": password
+    body: {
+      email,
+      senha: password
     }
   })
 
-  // try common token keys
   const token = res?.token || res?.accessToken || res?.jwt || res?.data?.token
   if (!token) throw new Error('Token not returned from auth')
 
@@ -156,7 +149,6 @@ export async function login(email, password) {
   localStorage.setItem('user_email', email)
 
   const isAdmin = inferIsAdmin(res, token)
-
   if (isAdmin !== null) {
     localStorage.setItem('user_is_admin', String(isAdmin))
     localStorage.setItem('user_role', isAdmin ? 'admin' : 'user')
@@ -200,21 +192,19 @@ export async function updateUsuarioAPI(id, data) {
     } catch (err) {
       lastError = err
       const statusCode = Number(String(err?.message || '').match(/HTTP\s+(\d+)/)?.[1] || err?.response?.status || 0)
-      if (statusCode && statusCode !== 405) {
-        throw err
-      }
+      if (statusCode && statusCode !== 405) throw err
     }
   }
 
-  throw lastError || new Error('Não foi possível atualizar o usuário')
+  throw lastError || new Error('Nao foi possivel atualizar o usuario')
 }
 
 export async function deletarUsuarioAPI(id) {
   return apiFetch(`/Usuarios/${id}`, { method: 'DELETE' })
 }
 
-export async function getInspecoesPorUsuarioAPI(usuarioId) {
-  return apiFetch(`/Inspecoes/usuario/${usuarioId}`, { method: 'GET' })
+export async function getInspecoesPorUsuarioAPI(usuarioId, params = {}) {
+  return getAdminUsuarioEfluentesAPI(usuarioId, params)
 }
 
 export async function criarUsuarioAPI(data) {
@@ -224,33 +214,157 @@ export async function criarUsuarioAPI(data) {
   })
 }
 
-/* Inspections CRUD using apiFetch */
-export async function createInspectionAPI(data) {
-  return apiFetch('/Inspecoes', { method: 'POST', body: data })
+function buildQuery(params = {}) {
+  const search = new URLSearchParams()
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      search.set(key, value)
+    }
+  }
+
+  const qs = search.toString()
+  return qs ? `?${qs}` : ''
 }
 
-export async function getInspectionsAPI() {
-  return apiFetch('/Inspecoes', { method: 'GET' })
+function buildEfluenteListQuery(params = {}) {
+  return buildQuery({
+    page: params.page ?? 1,
+    pageSize: params.pageSize ?? 10,
+    municipio: params.municipio,
+    linha: params.linha,
+    status: params.status,
+    data: params.data
+  })
 }
 
-export async function updateInspectionAPI(id, data) {
-  return apiFetch(`/Inspecoes/${id}`, { method: 'PUT', body: data })
+function normalizeEfluenteListResponse(res) {
+  if (Array.isArray(res)) return res.map(normalizeApiEfluenteListItem)
+  if (Array.isArray(res?.items)) return { ...res, items: res.items.map(normalizeApiEfluenteListItem) }
+  if (Array.isArray(res?.data)) return { ...res, data: res.data.map(normalizeApiEfluenteListItem) }
+  return res
 }
 
-export async function deleteInspectionAPI(id) {
-  return apiFetch(`/Inspecoes/${id}`, { method: 'DELETE' })
+export function extractEfluenteItems(response) {
+  if (Array.isArray(response)) return response
+  if (Array.isArray(response?.items)) return response.items
+  if (Array.isArray(response?.data?.items)) return response.data.items
+  if (Array.isArray(response?.data)) return response.data
+  return []
 }
 
-export async function uploadInspectionImageAPI(id, file) {
-  if (!file) throw new Error('Arquivo de imagem não informado')
+async function getEfluentesFromPath(path, params = {}) {
+  const res = await apiFetch(`${path}${buildEfluenteListQuery(params)}`, { method: 'GET' })
+  return normalizeEfluenteListResponse(res)
+}
 
+export async function createEfluenteAPI(data) {
+  return apiFetch('/efluentes', { method: 'POST', body: data })
+}
+
+function normalizeUploadFiles(files = []) {
+  return (Array.isArray(files) ? files : [files])
+    .filter(Boolean)
+    .map(file => {
+      const blob = file?.blob || file
+      const name = file?.name || 'anexo'
+      const type = file?.type || blob?.type || 'application/octet-stream'
+
+      if (typeof File !== 'undefined' && blob instanceof File && blob.name === name) return blob
+      if (typeof File !== 'undefined' && blob instanceof Blob) return new File([blob], name, { type })
+      return blob
+    })
+    .filter(Boolean)
+}
+
+async function sendEfluenteMultipart(path, method, payload, files = []) {
   const token = getToken()
-  if (!token) throw new Error('Usuário não autenticado')
+  if (!token) throw new Error('Usuario nao autenticado')
 
   const form = new FormData()
-  form.append('imagem', file)
+  form.append('payload', JSON.stringify(payload || {}))
 
-  const res = await fetch(`${INSPECTION_IMAGE_BASE}/${id}/imagem`, {
+  for (const file of normalizeUploadFiles(files)) {
+    form.append('files', file, file.name || 'anexo')
+  }
+
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    body: form
+  })
+
+  if (res.status === 401) {
+    logout()
+    throw new Error('Unauthorized')
+  }
+
+  const text = await res.text()
+  let data = null
+  try { data = text ? JSON.parse(text) : null } catch { data = text }
+
+  if (!res.ok) {
+    const err = new Error(data && data.message ? data.message : `HTTP ${res.status}`)
+    err.response = data
+    throw err
+  }
+
+  return data
+}
+
+export async function createEfluenteMultipartAPI(data, files = []) {
+  return sendEfluenteMultipart('/efluentes', 'POST', data, files)
+}
+
+export async function updateEfluenteMultipartAPI(pk, data, files = []) {
+  return sendEfluenteMultipart(`/efluentes/${encodeURIComponent(pk)}`, 'PUT', data, files)
+}
+
+export async function getMeusEfluentesAPI(params = {}) {
+  return getEfluentesFromPath('/efluentes/meus', params)
+}
+
+export async function getAdminEfluentesAPI(params = {}) {
+  return getEfluentesFromPath('/admin/efluentes', params)
+}
+
+export async function getAdminUsuarioEfluentesAPI(usuarioId, params = {}) {
+  if (usuarioId === undefined || usuarioId === null || usuarioId === '') {
+    throw new Error('usuarioId obrigatorio')
+  }
+
+  return getEfluentesFromPath(`/admin/usuarios/${encodeURIComponent(usuarioId)}/efluentes`, params)
+}
+
+export async function getEfluentesAPI(params = {}) {
+  return getMeusEfluentesAPI(params)
+}
+
+export async function getEfluenteByPkAPI(pk) {
+  return apiFetch(`/efluentes/${encodeURIComponent(pk)}`, { method: 'GET' })
+}
+
+export async function updateEfluenteAPI(pk, data) {
+  return apiFetch(`/efluentes/${encodeURIComponent(pk)}`, { method: 'PUT', body: data })
+}
+
+export async function deleteEfluenteAPI(pk) {
+  return apiFetch(`/efluentes/${encodeURIComponent(pk)}`, { method: 'DELETE' })
+}
+
+export async function uploadEfluenteAnexosAPI(pk, files = []) {
+  const selectedFiles = normalizeUploadFiles(files)
+  if (!selectedFiles.length) return null
+
+  const token = getToken()
+  if (!token) throw new Error('Usuario nao autenticado')
+
+  const form = new FormData()
+  for (const file of selectedFiles) form.append('files', file)
+
+  const res = await fetch(`${EFLUENTES_BASE}/${encodeURIComponent(pk)}/anexos`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`
@@ -260,15 +374,22 @@ export async function uploadInspectionImageAPI(id, file) {
 
   if (!res.ok) {
     const msg = await res.text()
-    throw new Error(msg || `Erro ao enviar imagem (${res.status})`)
+    throw new Error(msg || `Erro ao enviar anexos (${res.status})`)
   }
+
+  const text = await res.text()
+  try { return text ? JSON.parse(text) : null } catch { return text }
 }
 
-export async function getInspectionImageBlobAPI(id) {
-  const token = getToken()
-  if (!token) throw new Error('Usuário não autenticado')
+export async function getEfluenteAnexosAPI(pk) {
+  return apiFetch(`/efluentes/${encodeURIComponent(pk)}/anexos`, { method: 'GET' })
+}
 
-  const res = await fetch(`${INSPECTION_IMAGE_BASE}/${id}/imagem`, {
+export async function getEfluenteAnexoBlobAPI(attachmentId) {
+  const token = getToken()
+  if (!token) throw new Error('Usuario nao autenticado')
+
+  const res = await fetch(`${EFLUENTES_BASE}/anexos/${encodeURIComponent(attachmentId)}`, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`
@@ -277,10 +398,39 @@ export async function getInspectionImageBlobAPI(id) {
 
   if (!res.ok) {
     const msg = await res.text()
-    throw new Error(msg || `Erro ao buscar imagem (${res.status})`)
+    throw new Error(msg || `Erro ao buscar anexo (${res.status})`)
   }
 
   return res.blob()
+}
+
+export function getEfluenteAnexoUrl(attachmentId) {
+  return `${EFLUENTES_BASE}/anexos/${encodeURIComponent(attachmentId)}`
+}
+
+export async function createInspectionAPI(data) {
+  return createEfluenteAPI(data)
+}
+
+export async function getInspectionsAPI(params = {}) {
+  const res = await getMeusEfluentesAPI(params)
+  return extractEfluenteItems(res)
+}
+
+export async function updateInspectionAPI(id, data) {
+  return updateEfluenteAPI(id, data)
+}
+
+export async function deleteInspectionAPI(id) {
+  return deleteEfluenteAPI(id)
+}
+
+export async function uploadInspectionImageAPI(id, file) {
+  return uploadEfluenteAnexosAPI(id, file)
+}
+
+export async function getInspectionImageBlobAPI(id) {
+  return getEfluenteAnexoBlobAPI(id)
 }
 
 export default {
@@ -296,6 +446,21 @@ export default {
   deletarUsuarioAPI,
   getInspecoesPorUsuarioAPI,
   criarUsuarioAPI,
+  createEfluenteAPI,
+  createEfluenteMultipartAPI,
+  extractEfluenteItems,
+  getEfluentesAPI,
+  getMeusEfluentesAPI,
+  getAdminEfluentesAPI,
+  getAdminUsuarioEfluentesAPI,
+  getEfluenteByPkAPI,
+  updateEfluenteAPI,
+  updateEfluenteMultipartAPI,
+  deleteEfluenteAPI,
+  uploadEfluenteAnexosAPI,
+  getEfluenteAnexosAPI,
+  getEfluenteAnexoBlobAPI,
+  getEfluenteAnexoUrl,
   createInspectionAPI,
   getInspectionsAPI,
   updateInspectionAPI,

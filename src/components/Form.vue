@@ -1,1297 +1,1346 @@
 <template>
-  <div class="container">
-    <div class="admin-screen">
-      <div class="admin-header">
-        <div class="header-left">
-          <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
-          <div class="header-info">
-            <h1>{{ isEditMode ? 'Editar Inspeção' : 'Formulário de Inspeção' }}</h1>
-            <p class="subtitle">{{ isEditMode ? 'Altere os dados e salve a inspeção' : 'Preencha e envie a inspeção' }}</p>
+  <AppLayout>
+    <PageContainer>
+      <Header
+        :logo="logo"
+        :title="isEditMode ? 'Editar Efluente' : 'Novo Efluente'"
+        subtitle="Cadastro ambiental CPTM em etapas"
+      >
+        <template #actions>
+          <button type="button" class="btn ghost" @click="returnToMain">Voltar</button>
+        </template>
+      </Header>
+
+      <MobileStepHeader
+        :steps="steps"
+        :current-step="currentStep"
+        :progress-percent="progressPercent"
+        @open-steps="showStepSheet = true"
+      />
+
+      <form class="wizard-shell" @submit.prevent="submitForm">
+        <aside class="wizard-sidebar">
+          <StepperResponsivo
+            :steps="steps"
+            :current-step="currentStep"
+            :progress-percent="progressPercent"
+            :step-errors="stepErrors"
+            @go-to-step="goToStep"
+          />
+        </aside>
+
+        <section class="wizard-panel">
+          <div class="tablet-stepper">
+            <StepperResponsivo
+              :steps="compactSteps"
+              :current-step="compactCurrentStep"
+              :progress-percent="progressPercent"
+              :step-errors="compactStepErrors"
+              @go-to-step="goToCompactStep"
+            />
+            <button type="button" class="btn ghost" @click="showStepSheet = true">Ver todas as etapas</button>
           </div>
-        </div>
-        <div class="user-area">
-          <button class="avatar" @click="showUserMenu = !showUserMenu">👤</button>
-          <div v-if="showUserMenu" class="user-menu">
-            <button class="user-logout" @click="logout">Sair</button>
-          </div>
-        </div>
-      </div>
 
-      <div class="table-wrap">
-        <form class="form" @submit.prevent="submitForm">
-          <!-- Paginated pages: render only fields for current page -->
-          <div class="page">
-            <div v-for="field in pages[currentPage]" :key="field.key" class="row">
-              <label>{{ field.label }}</label>
-
-              <template v-if="field.type === 'textarea'">
-                <textarea v-model="form[field.key]" rows="4" :placeholder="field.placeholder">
-      </textarea>
-              </template>
-
-              <template v-else>
-                <input v-model="form[field.key]" :placeholder="field.placeholder" />
-              </template>
-
-              <!-- Injetar mapa se campo for location -->
-              <div v-if="field.key === 'location'" class="map-section">
-                <label>Coordenadas (captura GPS)</label>
-                <div v-if="form.latitude && form.longitude" class="coords-display">
-                  Lat: <input type="number" step="any" v-model.number="form.latitude" @change="updateMapFromInputs" />
-                  Lng: <input type="number" step="any" v-model.number="form.longitude" @change="updateMapFromInputs" />
-                </div>
-                <div class="map-wrap">
-                  <div id="inspection-map" style="height:280px; z-index: 1;"></div>
-                </div>
-                <div class="map-controls">
-                  <button type="button" class="btn" @click="captureGPS">Capturar Localização Atual</button>
-                </div>
-              </div>
-
+          <div class="step-heading">
+            <div>
+              <p class="eyebrow">Etapa {{ currentStep + 1 }}</p>
+              <h2>{{ activeStep.title }}</h2>
+              <p>{{ activeStep.description }}</p>
             </div>
+            <span class="badge neutral">{{ activeStep.fields?.length || activeStep.badge || 'Resumo' }}</span>
+          </div>
 
-            <div v-if="currentPage === 1" class="row photo-row">
-              <label>Foto da inspeção</label>
-              <div class="photo-actions">
-                <button type="button" class="btn" @click="toggleCamera">
-                  {{ cameraActive ? 'Fechar câmera' : 'Abrir câmera' }}
-                </button>
-                <label class="btn file-btn">
-                  Escolher arquivos
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    multiple
-                    @change="onImagesSelected"
-                    hidden
-                  />
+          <div v-if="activeStep.kind === 'fields'" class="wizard-grid">
+            <label
+              v-for="field in activeStep.fields"
+              :key="field.key"
+              class="field"
+              :class="{ wide: field.wide }"
+            >
+              <span>{{ field.label }}</span>
+              <textarea
+                v-if="field.type === 'textarea'"
+                v-model="form[field.key]"
+                rows="5"
+                :placeholder="field.placeholder || ''"
+              />
+              <input
+                v-else
+                v-model="form[field.key]"
+                :type="field.type || 'text'"
+                :step="field.step"
+                :placeholder="field.placeholder || ''"
+                @change="field.location ? updateMapFromInputs() : null"
+              />
+            </label>
+          </div>
+
+          <div v-if="activeStep.kind === 'location'" class="location-layout">
+            <div class="wizard-grid">
+              <label v-for="field in activeStep.fields" :key="field.key" class="field" :class="{ wide: field.wide }">
+                <span>{{ field.label }}</span>
+                <input
+                  v-model="form[field.key]"
+                  :type="field.type || 'text'"
+                  :step="field.step"
+                  @change="field.location ? updateMapFromInputs() : null"
+                />
+              </label>
+            </div>
+            <div class="map-card">
+              <div id="efluente-map"></div>
+              <div class="map-actions">
+                <button type="button" class="btn info" @click="captureGPS">Pegar minha localizacao atual</button>
+                <p class="muted">O marcador vermelho define o ponto do cadastro. O bonequinho mostra onde voce esta agora.</p>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="activeStep.kind === 'attachments'" class="attachments-layout">
+            <div
+              class="upload-panel"
+              :class="{ dragging: isDraggingFiles }"
+              @dragenter.prevent="isDraggingFiles = true"
+              @dragover.prevent="isDraggingFiles = true"
+              @dragleave.prevent="isDraggingFiles = false"
+              @drop.prevent="onFilesDropped"
+            >
+              <div class="upload-copy">
+                <h3>Anexos/Fotos</h3>
+                <p class="muted">Arraste arquivos para este card ou selecione no navegador. Nada sera enviado antes de clicar em Enviar.</p>
+              </div>
+              <div class="upload-counters">
+                <span>{{ imageFiles.length }} imagens</span>
+                <span>{{ documentFiles.length }} documentos</span>
+              </div>
+              <div class="upload-actions">
+                <label class="upload-drop">
+                  <input type="file" accept="image/*" capture="environment" @change="onFilesSelected" hidden />
+                  <strong>Tirar foto</strong>
+                </label>
+                <label class="upload-drop">
+                  <input type="file" accept="image/*" multiple @change="onFilesSelected" hidden />
+                  <strong>Selecionar da galeria</strong>
+                </label>
+                <label class="upload-drop">
+                  <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain" multiple @change="onFilesSelected" hidden />
+                  <strong>Selecionar documento</strong>
                 </label>
               </div>
-              <small class="photo-help">Use a câmera ou selecione uma ou mais imagens (máx. 20MB por arquivo).</small>
+            </div>
 
-              <div v-if="cameraError" class="photo-error">{{ cameraError }}</div>
-
-              <div v-if="cameraActive" class="camera-panel">
-                <video ref="cameraVideo" autoplay playsinline class="camera-video"></video>
-                <div class="camera-controls">
-                  <button type="button" class="btn-primary" @click="captureFromCamera">Tirar foto</button>
-                  <button type="button" class="btn" @click="toggleCamera">Cancelar</button>
-                </div>
+            <div class="attachment-column">
+              <h3>Imagens selecionadas</h3>
+              <div v-if="imageFiles.length" class="attachment-grid">
+                <article v-for="item in imageFiles" :key="item.key" class="attachment-card">
+                  <img :src="item.url" :alt="item.file.name" />
+                  <strong>{{ item.file.name }}</strong>
+                  <span>{{ item.file.type || 'imagem' }} - {{ formatBytes(item.file.size) }}</span>
+                  <button type="button" class="btn ghost" @click="removeSelectedFile(item.index)">Remover</button>
+                </article>
               </div>
+              <EmptyState v-else title="0 imagens" message="Miniaturas aparecem aqui." />
+            </div>
 
-              <div v-if="imagePreviewUrls.length" class="photo-preview-grid">
-                <div v-for="(previewUrl, index) in imagePreviewUrls" :key="`${previewUrl}-${index}`" class="photo-preview-item">
-                  <img :src="previewUrl" :alt="`Pré-visualização da foto ${index + 1}`" class="photo-preview" />
-                  <button type="button" class="photo-remove-btn" @click="removePhoto(index)">Remover</button>
-                </div>
+            <div class="attachment-column">
+              <h3>Documentos selecionados</h3>
+              <div v-if="documentFiles.length" class="document-list">
+                <article v-for="item in documentFiles" :key="item.key" class="attachment-card">
+                  <strong>{{ item.file.name }}</strong>
+                  <span>{{ item.file.type || 'documento' }} - {{ formatBytes(item.file.size) }}</span>
+                  <button type="button" class="btn ghost" @click="removeSelectedFile(item.index)">Remover</button>
+                </article>
               </div>
+              <EmptyState v-else title="0 documentos" message="Arquivos nao-imagem aparecem em lista." />
+            </div>
 
-              <div v-if="photoFiles.length" class="photo-count">
-                {{ photoFiles.length }} foto(s) adicionada(s)
+            <div v-if="existingAttachments.length" class="attachment-column wide">
+              <h3>Anexos existentes</h3>
+              <div class="attachment-grid compact">
+                <article v-for="att in existingAttachments" :key="att.attachmentId" class="attachment-card">
+                  <strong>{{ att.attName || `Anexo ${att.attachmentId}` }}</strong>
+                  <span>{{ att.contentType || 'arquivo' }} - {{ formatBytes(att.dataSize) }}</span>
+                  <div class="card-actions">
+                    <button type="button" class="btn" @click="previewAttachment(att)">Visualizar</button>
+                    <button type="button" class="btn" @click="downloadAttachment(att)">Baixar</button>
+                  </div>
+                </article>
               </div>
             </div>
           </div>
 
-          <!-- Pagination controls -->
-          <div class="pagination">
-            <div class="page-buttons">
-              <button v-for="n in totalPages" :key="n" type="button" class="btn page-btn"
-                :class="{ active: currentPage === (n - 1) }" @click="goToPage(n - 1)">
-                {{ n }}
-              </button>
-            </div>
+          <div v-if="activeStep.kind === 'review'" class="review-layout">
+            <article v-for="group in reviewGroups" :key="group.title" class="review-card">
+              <h3>{{ group.title }}</h3>
+              <dl>
+                <template v-for="field in group.fields" :key="field.key">
+                  <dt>{{ field.label }}</dt>
+                  <dd>{{ displayValue(form[field.key]) }}</dd>
+                </template>
+              </dl>
+            </article>
+            <article class="review-card">
+              <h3>Anexos</h3>
+              <p>{{ selectedFiles.length }} arquivo(s) selecionado(s) para envio.</p>
+              <p>{{ existingAttachments.length }} anexo(s) existente(s) neste efluente.</p>
+            </article>
           </div>
-          <div class="pagination arrows">
-            <button type="button" class="btn" @click="prevPage" :disabled="currentPage === 0">Anterior</button>
-            <button v-if="currentPage === totalPages - 1" type="button" class="btn-primary"
-              @click="submitForm">{{ isEditMode ? 'Salvar alterações' : 'Enviar' }}</button>
-            <button v-else type="button" class="btn" @click="nextPage" :disabled="currentPage >= totalPages - 1">
-              Próxima
+
+          <div v-if="attachmentPreviewUrl" class="preview-panel">
+            <div class="preview-header">
+              <strong>{{ attachmentPreviewName }}</strong>
+              <button type="button" class="btn ghost" @click="clearAttachmentPreview">Fechar</button>
+            </div>
+            <img v-if="attachmentPreviewIsImage" :src="attachmentPreviewUrl" alt="Preview do anexo" />
+            <a v-else :href="attachmentPreviewUrl" target="_blank" rel="noopener noreferrer">Abrir anexo</a>
+          </div>
+
+          <ToastAlert :message="status" :type="statusType" />
+
+          <footer class="wizard-actions">
+            <button type="button" class="btn" :disabled="currentStep === 0" @click="prevStep">Voltar</button>
+            <button type="button" class="btn warning" @click="saveDraft">Salvar rascunho</button>
+            <button v-if="!isLastStep" type="button" class="btn-primary" @click="nextStep">Proximo</button>
+            <button v-else type="submit" class="btn-primary" :disabled="saving">
+              {{ saving ? 'Enviando...' : 'Enviar' }}
             </button>
-          </div>
+          </footer>
+        </section>
+      </form>
 
-          <!-- Actions: submit on last page, otherwise Next also available -->
-          <div class="actions">
-            <button type="button" class="btn draw" @click="saveDraft">{{ isEditMode ? 'Salvar alterações' : 'Salvar rascunho' }}</button>
-            <button type="button" class="btn ghost" @click="cancel">Cancelar</button>
-          </div>
-
-          <div v-if="status" :class="['status', statusType]">{{ status }}</div>
-        </form>
-      </div>
-    </div>
-  </div>
+      <StepperBottomSheet
+        :visible="showStepSheet"
+        :steps="steps"
+        :current-step="currentStep"
+        :step-errors="stepErrors"
+        @close="showStepSheet = false"
+        @go-to-step="goToStep"
+      />
+    </PageContainer>
+  </AppLayout>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-// Em projetos Vite, o Leaflet pode perder os caminhos das imagens
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+import logo from '../assets/cptm_logo_simples.png'
+import AppLayout from './ui/AppLayout.vue'
+import EmptyState from './ui/EmptyState.vue'
+import Header from './ui/Header.vue'
+import MobileStepHeader from './ui/MobileStepHeader.vue'
+import PageContainer from './ui/PageContainer.vue'
+import StepperBottomSheet from './ui/StepperBottomSheet.vue'
+import StepperResponsivo from './ui/StepperResponsivo.vue'
+import ToastAlert from './ui/ToastAlert.vue'
+import { deleteInspection, getAllInspections, saveInspection } from '../services/db'
+import {
+  createEfluenteAPI,
+  createEfluenteMultipartAPI,
+  getEfluenteAnexoBlobAPI,
+  getEfluenteAnexosAPI,
+  getEfluenteByPkAPI,
+  getIsAdmin,
+  updateEfluenteAPI,
+  updateEfluenteMultipartAPI
+} from '../services/api'
+import {
+  attachmentRecordToFile,
+  buildEfluentePayload,
+  createAttachmentRecord,
+  createDraftRecord,
+  createEmptyEfluenteFormData,
+  getDraftAttachmentRecords,
+  mapApiEfluenteToFormData,
+  normalizeLocalEfluenteRecord,
+  splitAttachmentRecords,
+  SYNC_STATUS,
+  toNumberOrNull,
+  validateEfluenteForSubmit
+} from '../services/efluenteModel'
 
-import { useInspectionStore } from '../stores/inspectionStore'
-import { useRouter, useRoute } from 'vue-router'
-import { computed } from 'vue'
-import { saveInspection } from '../services/db'
-import { getAllInspections } from '../services/db'
-import { syncInspections } from '../services/sync'
-import { sendInspectionNow } from '../services/sync'
-import { getToken, getIsAdmin, getInspectionsAPI, updateInspectionAPI } from '../services/api'
-import { watch } from 'vue'
+delete L.Icon.Default.prototype._getIconUrl
+L.Icon.Default.mergeOptions({ iconRetinaUrl: markerIcon2x, iconUrl: markerIcon, shadowUrl: markerShadow })
 
-// Conserta os ícones do mapa Leaflet
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: markerIcon2x,
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow
-})
-
-const router = useRouter()
 const route = useRoute()
-const store = useInspectionStore()
+const router = useRouter()
 const isEditMode = computed(() => route.params.id !== 'new')
-const inspectionSource = ref('local')
-const loadedStatus = ref('')
-const photoFiles = ref([])
-const imagePreviewUrls = ref([])
-const cameraActive = ref(false)
-const cameraError = ref('')
-const cameraVideo = ref(null)
-const cameraStream = ref(null)
-
-// map refs
-const mapRef = ref(null)
-const mapMarker = ref(null)
-const personMarker = ref(null)
-
-const showUserMenu = ref(false)
+const currentStep = ref(0)
+const showStepSheet = ref(false)
+const localDraftId = ref('')
+const loadedFromLocal = ref(false)
+const saving = ref(false)
+const hasSavedSuccessfully = ref(false)
 const status = ref('')
-const statusType = ref('') // 'success' | 'error' | 'info' | 'warning'
+const statusType = ref('info')
+const selectedFiles = ref([])
+const selectedPreviewUrls = ref([])
+const isDraggingFiles = ref(false)
+const existingAttachments = ref([])
+const attachmentPreviewUrl = ref('')
+const attachmentPreviewName = ref('')
+const attachmentPreviewType = ref('')
+let attachmentObjectUrl = ''
+let mapRef = null
+let mapMarker = null
+let personMarker = null
+let hasRequestedInitialLocation = false
 
-function setStatus(msg = '', type = 'info', duration = 3000) {
-  status.value = msg
-  statusType.value = type
-  if (duration > 0 && msg) {
-    setTimeout(() => {
-      status.value = ''
-      statusType.value = ''
-    }, duration)
+const emptyForm = createEmptyEfluenteFormData()
+const form = reactive(createEmptyEfluenteFormData())
+
+const identificationFields = [
+  { key: 'txNrElementoMonitoramento', label: 'Numero do Elemento de Monitoramento' },
+  { key: 'txNmElementoMonitoramento', label: 'Nome do Elemento de Monitoramento' },
+  { key: 'txSiglaDeptoMeioAmbiente', label: 'Departamento Meio Ambiente' },
+  { key: 'txStatusDoDesvioAmbiental', label: 'Status do Desvio Ambiental' },
+  { key: 'txStatusDoRegistroNoBd', label: 'Status do Registro no Sistema Central' }
+]
+
+const locationFields = [
+  { key: 'txMunicipio', label: 'Municipio' },
+  { key: 'txLinhaCptm', label: 'Linha CPTM' },
+  { key: 'txViaCptm', label: 'Via CPTM' },
+  { key: 'txTrechoESentidoCptm', label: 'Trecho e Sentido CPTM' },
+  { key: 'txKmPoste', label: 'KM/Poste' },
+  { key: 'txEstacaoCptm', label: 'Estacao CPTM' },
+  { key: 'nrLatGrauDecimalWgs84', label: 'Latitude WGS84', type: 'number', step: 'any', location: true },
+  { key: 'nrLongGrauDecimalWgs84', label: 'Longitude WGS84', type: 'number', step: 'any', location: true },
+  { key: 'nrLatMetrosSirgas2000', label: 'Latitude SIRGAS2000', type: 'number', step: 'any' },
+  { key: 'nrLongMetrosSirgas2000', label: 'Longitude SIRGAS2000', type: 'number', step: 'any' },
+  { key: 'txNmLocalEscopoContratual', label: 'Local do Escopo Contratual', wide: true }
+]
+
+const formFields = [
+  { key: 'txTipoDeFormulario', label: 'Tipo de Formulario' },
+  { key: 'dtDataEmissaoFormulario', label: 'Data de Emissao', type: 'date' },
+  { key: 'nrNumeroDeFormulario', label: 'Numero do Formulario', type: 'number' },
+  { key: 'txAutorPfDoFormulario', label: 'Autor PF do Formulario' },
+  { key: 'txNaturezaDoPga', label: 'Natureza do PGA' },
+  { key: 'txNomePjExecutora', label: 'Nome PJ Executora' }
+]
+
+const activityFields = [
+  { key: 'txTipoAtividadeListada', label: 'Tipo de Atividade Listada' },
+  { key: 'txTipoAtividadeNListada', label: 'Tipo de Atividade Nao Listada' },
+  { key: 'txTipoDraListado', label: 'Tipo DRA Listado' },
+  { key: 'txTipoDraNListado', label: 'Tipo DRA Nao Listado' },
+  { key: 'txIdDra', label: 'ID DRA' },
+  { key: 'dtValidadeDra', label: 'Validade DRA', type: 'date' },
+  { key: 'txAnaliseCptmAprovacao', label: 'Analise CPTM Aprovacao' },
+  { key: 'txTipoAtividadeCptm', label: 'Tipo Atividade CPTM' },
+  { key: 'txNmLocalAtiv', label: 'Nome Local Atividade' },
+  { key: 'txNmLocalAtivComplemento', label: 'Complemento Local Atividade', wide: true }
+]
+
+const effluentFields = [
+  { key: 'txOrigemEfluente', label: 'Origem do Efluente' },
+  { key: 'txFonteGeradora', label: 'Fonte Geradora' },
+  { key: 'nrQuantidadeL', label: 'Quantidade em Litros', type: 'number', step: 'any' },
+  { key: 'txTipoDestinacao', label: 'Tipo de Destinacao' },
+  { key: 'txTipoVeiculo', label: 'Tipo de Veiculo' },
+  { key: 'txIdVeiculo', label: 'ID do Veiculo' },
+  { key: 'txIdGuiaRemessa', label: 'ID Guia de Remessa' },
+  { key: 'nrDistanciaDaViaM', label: 'Distancia da Via em Metros', type: 'number', step: 'any' },
+  { key: 'txOfereceRiscoSistemaCptm', label: 'Oferece Risco ao Sistema CPTM' },
+  { key: 'txProprietario', label: 'Proprietario' },
+  { key: 'txObsCadastramento', label: 'Observacoes do Cadastramento', type: 'textarea', wide: true }
+]
+
+const registrationFields = [
+  { key: 'dtDataDoCadastramento', label: 'Data do Cadastramento', type: 'date' },
+  { key: 'hrHoraDoCadastramento', label: 'Hora do Cadastramento', type: 'time' },
+  { key: 'txAutorPjDoCadastro', label: 'Autor PJ do Cadastro' },
+  { key: 'txAutorPfDoCadastro', label: 'Autor PF do Cadastro' },
+  { key: 'txNmResponsavelCadastro', label: 'Nome Responsavel Cadastro' },
+  { key: 'txRpResponsavelCadastro', label: 'RP Responsavel Cadastro' },
+  { key: 'txDrtResponsavelCadastro', label: 'DRT Responsavel Cadastro' }
+]
+
+const contractorFields = [
+  { key: 'txNomePjDaContratada', label: 'Nome PJ da Contratada' },
+  { key: 'txNrContratoContratada', label: 'Numero Contrato Contratada' },
+  { key: 'txNmAreaGestoraCptm', label: 'Nome Area Gestora CPTM' },
+  { key: 'txIdAreaGestoraCptm', label: 'ID Area Gestora CPTM' },
+  { key: 'txSiglaAreaGestoraCptm', label: 'Sigla Area Gestora CPTM' },
+  { key: 'txNomePfDaRepresentante', label: 'Nome PF Representante' },
+  { key: 'txNomePjDaSupervisora', label: 'Nome PJ Supervisora' },
+  { key: 'txNrContratoSupervisora', label: 'Numero Contrato Supervisora' }
+]
+
+const relatedFileFields = [
+  { key: 'txNmArquivoFdcRelacionado', label: 'Nome Arquivo FDC Relacionado' },
+  { key: 'pkCdArquivoFdcRelacionado', label: 'Codigo Arquivo FDC Relacionado' },
+  { key: 'txNmArquivoRvtRelacionado', label: 'Nome Arquivo RVT Relacionado' },
+  { key: 'pkCdElementoDeMonitorRvt', label: 'Codigo Elemento Monitor RVT' },
+  { key: 'txNmArquivoDacRelacionado', label: 'Nome Arquivo DAC Relacionado' },
+  { key: 'pkCdElementoDeMonitorDac', label: 'Codigo Elemento Monitor DAC' },
+  { key: 'txNmArquivoCncRelacionado', label: 'Nome Arquivo CNC Relacionado' },
+  { key: 'pkCdElementoDeMonitorCnc', label: 'Codigo Elemento Monitor CNC' },
+  { key: 'pkCdCodigoNoUltimoRra', label: 'Codigo Ultimo RRA' },
+  { key: 'pkCdCedoc', label: 'Codigo CEDOC' }
+]
+
+const steps = [
+  { title: 'Identificacao', description: 'Codigo, elemento e status', kind: 'fields', fields: identificationFields },
+  { title: 'Localizacao', description: 'Trecho CPTM e coordenadas', kind: 'location', fields: locationFields },
+  { title: 'Formulario', description: 'Dados do formulario e responsaveis', kind: 'fields', fields: formFields },
+  { title: 'Atividade e DRA', description: 'Dados da atividade ambiental', kind: 'fields', fields: activityFields },
+  { title: 'Efluente', description: 'Origem, volume e destinacao', kind: 'fields', fields: effluentFields },
+  { title: 'Cadastro', description: 'Autores e responsavel pelo cadastro', kind: 'fields', fields: registrationFields },
+  { title: 'Contratada e area', description: 'Contratos, supervisora e area gestora', kind: 'fields', fields: contractorFields },
+  { title: 'Arquivos relacionados', description: 'Referencias FDC, RVT, DAC, CNC e CEDOC', kind: 'fields', fields: relatedFileFields },
+  { title: 'Anexos/Fotos', description: 'Imagens, documentos e anexos existentes', kind: 'attachments', badge: 'Upload' },
+  { title: 'Revisao e envio', description: 'Conferencia antes de enviar ao sistema central', kind: 'review', badge: 'Resumo' }
+]
+
+const activeStep = computed(() => steps[currentStep.value])
+const isLastStep = computed(() => currentStep.value === steps.length - 1)
+const progressPercent = computed(() => Math.round(((currentStep.value + 1) / steps.length) * 100))
+const stepErrors = computed(() => steps.map((_, index) => getStepError(index)))
+const compactIndexes = computed(() => {
+  const indexes = [currentStep.value]
+  if (currentStep.value + 1 < steps.length) indexes.push(currentStep.value + 1)
+  return indexes
+})
+const compactSteps = computed(() => compactIndexes.value.map(index => steps[index]))
+const compactCurrentStep = computed(() => compactIndexes.value.indexOf(currentStep.value))
+const compactStepErrors = computed(() => compactIndexes.value.map(index => stepErrors.value[index]))
+const attachmentPreviewIsImage = computed(() => attachmentPreviewType.value.startsWith('image/'))
+const imageFiles = computed(() => selectedFiles.value
+  .map((file, index) => ({ file, index, key: file.id || `${file.name}-${index}`, url: selectedPreviewUrls.value[index] || '' }))
+  .filter(item => item.file.type?.startsWith('image/')))
+const documentFiles = computed(() => selectedFiles.value
+  .map((file, index) => ({ file, index, key: file.id || `${file.name}-${index}` }))
+  .filter(item => !item.file.type?.startsWith('image/')))
+const reviewGroups = computed(() => [
+  { title: 'Dados principais', fields: identificationFields },
+  { title: 'Localizacao', fields: locationFields.slice(0, 9) },
+  { title: 'Dados do efluente', fields: effluentFields },
+  { title: 'Responsaveis', fields: registrationFields },
+  { title: 'Contratada e area gestora', fields: contractorFields }
+])
+
+watch(currentStep, async () => {
+  if (activeStep.value.kind === 'location') {
+    await nextTick()
+    initMap()
   }
-}
-
-// pegar id da rota
-const inspectionId = route.params.id
-
-// estado do formulário
-const form = reactive({
-  id: null,
-  title: '',
-  location: '',
-  address: '',
-  latitude: null,
-  longitude: null,
-  notes: '',
-  q1: '',
-  q2: '',
-  q3: '',
-  q4: '',
-  q5: '',
-  q6: '',
-  userEmail: '',
-  status: '',
-  photo: null,
-  photos: [],
-  photoName: '',
-  photoType: ''
 })
 
-function revokePhotoPreviews() {
-  for (const previewUrl of imagePreviewUrls.value) {
-    if (typeof previewUrl === 'string' && previewUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(previewUrl)
-    }
-  }
-}
-
-function syncPhotoFields() {
-  const files = [...photoFiles.value]
-  form.photos = files
-  form.photo = files[0] || null
-  form.photoName = form.photo?.name || ''
-  form.photoType = form.photo?.type || ''
-}
-
-function setPhotoPreviews(sources = []) {
-  revokePhotoPreviews()
-  imagePreviewUrls.value = []
-
-  const items = Array.isArray(sources) ? sources : [sources]
-  for (const source of items) {
-    if (!source) continue
-
-    if (typeof source === 'string') {
-      imagePreviewUrls.value.push(source)
-      continue
-    }
-
-    if (source instanceof Blob) {
-      imagePreviewUrls.value.push(URL.createObjectURL(source))
-    }
-  }
-}
-
-function setPhotos(sources = []) {
-  photoFiles.value = Array.isArray(sources) ? sources.filter(Boolean) : [sources].filter(Boolean)
-  syncPhotoFields()
-  setPhotoPreviews(photoFiles.value)
-}
-
-function addPhotos(files = []) {
-  const incomingFiles = Array.isArray(files) ? files : [files]
-  const validFiles = []
-
-  for (const file of incomingFiles) {
-    if (!file) continue
-
-    if (!file.type || !file.type.startsWith('image/')) {
-      setStatus('Selecione apenas arquivos de imagem.', 'error', 4000)
-      continue
-    }
-
-    const maxSize = 20 * 1024 * 1024
-    if (file.size > maxSize) {
-      setStatus(`A imagem ${file.name || ''} deve ter no máximo 20MB.`, 'error', 4000)
-      continue
-    }
-
-    validFiles.push(file)
-  }
-
-  if (!validFiles.length) return
-
-  setPhotos([...photoFiles.value, ...validFiles])
-}
-
-// carregar inspeção existente
 onMounted(async () => {
-
-  const inspections = await getAllInspections()
-  store.inspections = inspections
-
-  if (!isEditMode.value) return
-
-  let inspection = inspections.find(i => String(i.id) === String(inspectionId))
-
-  if (inspection) {
-    inspectionSource.value = 'local'
-    loadedStatus.value = inspection.status || ''
-    Object.assign(form, inspection)
-    setPhotos(Array.isArray(inspection.photos) && inspection.photos.length
-      ? inspection.photos
-      : inspection.photo
-        ? [inspection.photo]
-        : [])
-    return
+  setTodayDefaults()
+  if (isEditMode.value) {
+    await loadEfluente()
+    await loadAttachments()
   }
-
-  try {
-    const res = await getInspectionsAPI()
-    const arr = Array.isArray(res) ? res : res?.data ?? []
-    inspection = arr.find(i => String(i.id ?? i.Id) === String(inspectionId))
-
-    if (inspection) {
-      inspectionSource.value = 'api'
-      const normalized = {
-        ...inspection,
-        id: inspection.id ?? inspection.Id,
-        title: inspection.title ?? inspection.Title ?? inspection.titulo ?? '',
-        location: inspection.location ?? inspection.Location ?? '',
-        address: inspection.address ?? inspection.Address ?? '',
-        latitude: inspection.latitude ?? inspection.Latitude ?? null,
-        longitude: inspection.longitude ?? inspection.Longitude ?? null,
-        notes: inspection.notes ?? inspection.Notes ?? '',
-        q1: inspection.q1 ?? inspection.Q1 ?? '',
-        q2: inspection.q2 ?? inspection.Q2 ?? '',
-        q3: inspection.q3 ?? inspection.Q3 ?? '',
-        q4: inspection.q4 ?? inspection.Q4 ?? '',
-        q5: inspection.q5 ?? inspection.Q5 ?? '',
-        q6: inspection.q6 ?? inspection.Q6 ?? '',
-        userEmail: inspection.userEmail ?? inspection.UserEmail ?? '',
-        status: inspection.status ?? 'Enviado'
-      }
-
-      loadedStatus.value = normalized.status || 'Enviado'
-      Object.assign(form, normalized)
-      setPhotos(Array.isArray(normalized.photos) && normalized.photos.length
-        ? normalized.photos
-        : normalized.photo
-          ? [normalized.photo]
-          : [])
-    }
-  } catch (err) {
-    console.error('Erro ao carregar inspeção para edição', err)
-    setStatus('Não foi possível carregar a inspeção para edição.', 'error', 5000)
-  }
-
-})
-
-onMounted(() => {
-  // init map only on the page that contains the Local field (page 0)
-  // create a deferred init so it doesn't run when viewing other pages
-  tryInitMap()
+  if (activeStep.value.kind === 'location') initMap()
 })
 
 onBeforeUnmount(() => {
-  stopCamera()
-
-  revokePhotoPreviews()
-
-  if (mapRef.value) {
-    mapRef.value.remove()
-    mapRef.value = null
-  }
+  clearAttachmentPreview()
+  clearSelectedPreviewUrls()
+  if (mapRef) mapRef.remove()
 })
 
-// ----------------------
-// Autosave
-// ----------------------
-let autosaveTimer = null
-
-watch(
-  form,
-  () => {
-
-    clearTimeout(autosaveTimer)
-
-    autosaveTimer = setTimeout(async () => {
-
-      if (!form.title || !form.title.trim()) {
-        return
-      }
-
-      // If this inspection is already marked as Aguardando Rede in the store,
-      // do not overwrite it back to 'Não enviada' (this would block sending).
-      const existing = store.inspections.find(i => i.id === form.id)
-      if (existing && existing.status === 'Aguardando Rede') {
-        // keep awaiting status
-        return
-      }
-
-      const saved = await persistInspection(isEditMode.value ? (loadedStatus.value || form.status || 'Enviado') : "Não enviada")
-
-      if (saved) {
-        setStatus('Salvo automaticamente', 'success', 2500)
-      }
-
-    }, 2000)
-
-  },
-  { deep: true }
-)
-
-
-
-// ----------------------
-// Paginação
-// ----------------------
-
-const currentPage = ref(0)
-
-const pages = [
-  [
-    { key: 'title', label: 'Título', placeholder: 'Título da inspeção', type: 'text' },
-    { key: 'location', label: 'Local', placeholder: 'Local/Estação', type: 'text' }
-  ],
-  [
-    { key: 'address', label: 'Endereço', placeholder: 'Endereço (opcional)', type: 'text' },
-    { key: 'q1', label: 'Pergunta 1', placeholder: 'Resposta da pergunta 1', type: 'text' },
-    { key: 'q5', label: 'Pergunta 1.1', placeholder: 'Resposta adicional 1', type: 'text' },
-    { key: 'q6', label: 'Pergunta 1.2', placeholder: 'Resposta adicional 2', type: 'text' }
-  ],
-  [
-    { key: 'q2', label: 'Pergunta 2', placeholder: 'Resposta da pergunta 2', type: 'text' },
-    { key: 'q3', label: 'Pergunta 3', placeholder: 'Resposta da pergunta 3', type: 'text' }
-  ],
-  [
-    { key: 'q4', label: 'Observações', placeholder: 'Anotações da inspeção', type: 'textarea' }
-  ]
-]
-
-
-const totalPages = computed(() => pages.length)
-
-watch(currentPage, async (newPage) => {
-  if (newPage === 0) {
-    await nextTick()
-    setTimeout(() => {
-      tryInitMap()
-    }, 150)
-  } else {
-    if (mapRef.value) {
-      mapRef.value.remove()
-      mapRef.value = null
-      mapMarker.value = null
-      personMarker.value = null
-    }
-  }
+onBeforeRouteLeave(async () => {
+  await saveDraftBeforeLeaving()
+  return true
 })
 
-function prevPage() {
-  if (currentPage.value > 0) {
-    currentPage.value--
-  }
+function setStatus(message, type = 'info') {
+  status.value = message
+  statusType.value = type
 }
 
-function nextPage() {
-  if (currentPage.value < totalPages.value - 1) {
-    currentPage.value++
-  }
+function setTodayDefaults() {
+  const today = new Date().toISOString().slice(0, 10)
+  if (!form.dtDataEmissaoFormulario) form.dtDataEmissaoFormulario = today
+  if (!form.dtDataDoCadastramento) form.dtDataDoCadastramento = today
 }
 
-function goToPage(i) {
-  if (i >= 0 && i < totalPages.value) {
-    currentPage.value = i
-  }
-}
-
-
-// ----------------------
-// Salvar inspeção
-// ----------------------
-
-async function submitForm() {
-  // avoid autosave racing with submit
-  clearTimeout(autosaveTimer)
-
-  if (isEditMode.value) {
-    await saveDraft()
-    return
-  }
-
-  if (!form.title || !form.title.trim()) {
-    setStatus('Preencha o Título da inspeção.', 'error', 4000)
-    return
-  }
-
-  setStatus('Salvando...', 'info', 0)
-
-  if (!form.id) form.id = "i" + Date.now()
-
-  // persist as awaiting network (blocked until sync runs)
-  const persisted = await persistInspection('Aguardando Rede')
-
-  if (!persisted) {
-    setStatus('Não foi possível salvar a inspeção sem título.', 'error', 4000)
-    return
-  }
-
-  // if offline, notify user and return
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    setStatus('Sem conexão. A inspeção ficará em Aguardando Rede.', 'warning', 5000)
-    setTimeout(() => returnToMain(), 1000)
-    return
-  }
-
-  // only attempt sync when authenticated
-  const token = getToken()
-  if (!token) {
-    setStatus('Não autenticado. Faça login para sincronizar com o banco.', 'error', 4000)
-    setTimeout(() => router.push('/login'), 1000)
-    return
-  }
-
-  // attempt synchronization / send now
+async function loadEfluente() {
+  setStatus('Carregando efluente...', 'info')
   try {
-      const result = await sendInspectionNow({
-        ...form,
-        status: 'Aguardando Rede',
-        userEmail: form.userEmail || localStorage.getItem('user_email') || ''
-      })
+    const routeId = String(route.params.id || '')
+    const localRecords = await getAllInspections()
+    const localRecord = (localRecords || [])
+      .map(normalizeLocalEfluenteRecord)
+      .find(item => item?.syncStatus !== SYNC_STATUS.SENT && String(item?.localId || item?.id) === routeId)
 
-      if (result && result.status === 'Enviado') {
-        setStatus('Enviado com sucesso para o banco de dados Oracle!', 'success', 3500)
-      } else {
-        setStatus('Back-end inacessível! Salvo offline e tentaremos reenviar em breve.', 'warning', 6000)
-      }
-
-      await syncInspections()
-  } catch (err) {
-      setStatus('Erro de conexão com o Back-end/Banco.', 'error', 6000)
-  }
-
-  setTimeout(() => returnToMain(), 1200)
-
-}
-
-// geolocation helpers
-function setMarker(latlng) {
-  if (!mapRef.value) return
-  if (mapMarker.value) {
-    mapMarker.value.setLatLng(latlng)
-  } else {
-    mapMarker.value = L.marker(latlng, { draggable: true }).addTo(mapRef.value)
-    mapMarker.value.on('dragend', (e) => {
-      const p = e.target.getLatLng()
-      updatePosition(p.lat, p.lng)
-    })
-  }
-}
-
-function setPersonMarker(latlng) {
-  if (!mapRef.value) return
-  if (personMarker.value) {
-    personMarker.value.setLatLng(latlng)
-  } else {
-    const icon = L.divIcon({
-      html: '<div style="font-size: 36px; line-height: 1; filter: drop-shadow(0px 2px 3px rgba(0,0,0,0.8));">🧍</div>',
-      className: 'person-icon',
-      iconSize: [36, 36],
-      iconAnchor: [18, 36] // point to bottom center
-    })
-    personMarker.value = L.marker(latlng, { 
-      icon, 
-      zIndexOffset: 1000, 
-      interactive: false 
-    }).addTo(mapRef.value)
-  }
-}
-
-function updatePosition(lat, lng) {
-  form.latitude = Number(lat.toFixed(6))
-  form.longitude = Number(lng.toFixed(6))
-}
-
-function captureGPS() {
-  if (!navigator.geolocation) {
-    setStatus('Geolocalização não disponível no navegador', 'error', 4000)
-    return
-  }
-
-  setStatus('Capturando posição...', 'info', 0)
-
-  navigator.geolocation.getCurrentPosition((pos) => {
-    const lat = pos.coords.latitude
-    const lng = pos.coords.longitude
-    updatePosition(lat, lng)
-    if (mapRef.value) {
-      setMarker([lat, lng])
-      setPersonMarker([lat, lng])
-      mapRef.value.setView([lat, lng], 17) // Zoom mais próximo (era 16, agora 17)
-    }
-    setStatus('Posição capturada', 'success', 2000)
-  }, (err) => {
-    // Tratamento de erro detalhado para ajudar o usuário
-    if (err.code === 1) { // PERMISSION_DENIED
-      setStatus('Localização bloqueada pelo navegador. Permita o acesso ao GPS na barra de endereço.', 'error', 6000)
-    } else {
-      setStatus('Erro ao obter posição: ' + err.message, 'error', 4000)
-    }
-  }, { enableHighAccuracy: true, timeout: 10000 })
-}
-
-function tryInitMap() {
-  // initialize map container if present
-  setTimeout(() => {
-    const el = document.getElementById('inspection-map')
-    if (!el) return
-
-    if (mapRef.value) {
-      mapRef.value.invalidateSize()
+    if (localRecord) {
+      localDraftId.value = localRecord.localId
+      loadedFromLocal.value = true
+      Object.assign(form, createEmptyEfluenteFormData(), localRecord.formData)
+      setSelectedAttachments(getDraftAttachmentRecords(localRecord))
+      console.log('dados exibidos', localRecord.formData)
+      setStatus('', 'info')
       return
     }
 
-    mapRef.value = L.map(el, { center: [ -23.55052, -46.633308 ], zoom: 13 })
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
-    }).addTo(mapRef.value)
-
-    // if we already have coordinates, show marker
-    if (form.latitude && form.longitude) {
-      setMarker([form.latitude, form.longitude])
-      mapRef.value.setView([form.latitude, form.longitude], 17)
-    }
-
-    // Sempre mostrar onde o usuário está com o ícone da pessoinha
-    if (navigator.geolocation) {
-      if (inspectionId === 'new' && !form.latitude) setStatus('Capturando posição...', 'info', 0);
-      
-      navigator.geolocation.getCurrentPosition((pos) => {
-        if (mapRef.value) {
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          
-          setPersonMarker([lat, lng]);
-          
-          // Se for uma nova inspeção e estiver vazia, assume essa posição logada como a inicial!
-          if (inspectionId === 'new' && !form.latitude) {
-            updatePosition(lat, lng);
-            setMarker([lat, lng]);
-            mapRef.value.setView([lat, lng], 17);
-            setStatus('Posição inicial capturada', 'success', 2000);
-          }
-        }
-      }, (err) => {
-        console.warn("Não foi possível obter a posição atual:", err)
-        if (inspectionId === 'new' && !form.latitude) {
-           if (err.code === 1) setStatus('Acesso ao GPS bloqueado.', 'error', 4000);
-           else setStatus('Falha ao capturar posição: ' + err.message, 'error', 4000);
-        }
-      }, { enableHighAccuracy: true, timeout: 10000 })
-    }
-
-    // allow clicking on map to set marker
-    mapRef.value.on('click', (e) => {
-      const { lat, lng } = e.latlng
-      updatePosition(lat, lng)
-      setMarker([lat, lng])
-    })
-    
-    // Assegura que o mapa ajuste ao tamanho do container
-    setTimeout(() => {
-      if (mapRef.value) mapRef.value.invalidateSize()
-    }, 200)
-
-  }, 100)
+    const apiData = await getEfluenteByPkAPI(routeId)
+    const formData = mapApiEfluenteToFormData(apiData)
+    console.log('dados api', apiData)
+    Object.assign(form, createEmptyEfluenteFormData(), formData)
+    setSelectedAttachments([])
+    console.log('dados exibidos', formData)
+    loadedFromLocal.value = false
+    setStatus('', 'info')
+  } catch (err) {
+    console.error('Erro ao carregar efluente', err)
+    setStatus('Nao foi possivel carregar o efluente.', 'error')
+  }
 }
 
-async function persistInspection(status = "Rascunho") {
+async function loadAttachments() {
+  if (loadedFromLocal.value) return
+  const pk = form.pkCdMeioAmbienteCptm || route.params.id
+  if (!pk || pk === 'new') return
+  try {
+    const data = await getEfluenteAnexosAPI(pk)
+    console.log('dados api', data)
+    existingAttachments.value = Array.isArray(data) ? data : []
+    console.log('dados exibidos', existingAttachments.value)
+  } catch (err) {
+    console.error('Erro ao carregar anexos', err)
+  }
+}
 
-  if (!form.title || !form.title.trim()) {
+function goToStep(index) {
+  currentStep.value = Math.max(0, Math.min(index, steps.length - 1))
+}
+
+function nextStep() {
+  if (!validateCurrentStep()) return
+  goToStep(currentStep.value + 1)
+}
+
+function prevStep() {
+  goToStep(currentStep.value - 1)
+}
+
+function validateCurrentStep() {
+  const error = getStepError(currentStep.value)
+  if (error) {
+    setStatus(error, 'error')
     return false
   }
-
-  if (!form.id) {
-    form.id = "i" + Date.now()
-  }
-
-  const payload = {
-    ...form,
-    photos: [...photoFiles.value],
-    status: isEditMode.value ? (loadedStatus.value || form.status || status) : status,
-    userEmail: form.userEmail || localStorage.getItem('user_email') || ''
-  }
-
-  if (isEditMode.value) {
-    const apiPayload = { ...payload }
-    delete apiPayload.photo
-    delete apiPayload.photos
-    delete apiPayload.photoName
-    delete apiPayload.photoType
-
-    if (inspectionSource.value === 'api') {
-      await updateInspectionAPI(payload.id, apiPayload)
-    }
-
-    await saveInspection(payload)
-
-    const index = store.inspections.findIndex(i => i.id === payload.id)
-
-    if (index !== -1) {
-      store.inspections[index] = payload
-    } else {
-      store.inspections.push(payload)
-    }
-
-    loadedStatus.value = payload.status
-    form.status = payload.status
-    return true
-  }
-
-  await saveInspection(payload)
-
-  const index = store.inspections.findIndex(i => i.id === payload.id)
-
-  if (index !== -1) {
-    store.inspections[index] = payload
-  } else {
-    store.inspections.push(payload)
-  }
-
+  setStatus('', 'info')
   return true
-
 }
 
+function getStepError(index) {
+  if (steps[index]?.kind !== 'location') return ''
 
-async function saveDraft() {
+  const payload = buildPayload()
+  const lat = payload.nrLatGrauDecimalWgs84
+  const lng = payload.nrLongGrauDecimalWgs84
 
-  const saved = await persistInspection(isEditMode.value ? (loadedStatus.value || form.status || 'Enviado') : "Não enviada")
+  if (lat !== null && (lat < -90 || lat > 90)) return 'Latitude valida deve estar entre -90 e 90.'
+  if (lng !== null && (lng < -180 || lng > 180)) return 'Longitude valida deve estar entre -180 e 180.'
+  return ''
+}
 
-  if (!saved) {
-    setStatus('Preencha o Título da inspeção.', 'error', 4000)
+function buildPayload(options = {}) {
+  return buildEfluentePayload(form, options)
+}
+
+function extractPk(response, payload) {
+  return response?.pkCdMeioAmbienteCptm
+    || response?.PkCdMeioAmbienteCptm
+    || response?.data?.pkCdMeioAmbienteCptm
+    || response?.data?.PkCdMeioAmbienteCptm
+}
+
+async function getExistingLocalRecord() {
+  const id = localDraftId.value || String(route.params.id || '')
+  if (!id || id === 'new') return null
+
+  const localRecords = await getAllInspections()
+  return (localRecords || []).find(item => String(item?.localId || item?.id) === String(id)) || null
+}
+
+function hasDraftableData() {
+  if (selectedFiles.value.length) return true
+
+  const payload = buildPayload()
+  return Object.entries(payload).some(([key, value]) => {
+    if (key === 'pkCdMeioAmbienteCptm') return false
+    return value !== '' && value !== null && value !== undefined
+  })
+}
+
+async function saveDraft(options = {}) {
+  const { silent = false, updateRoute = true, syncStatus = SYNC_STATUS.DRAFT, lastError = '' } = options
+  const { images, documents } = splitAttachmentRecords(selectedFiles.value)
+  const existingRecord = await getExistingLocalRecord()
+  const record = createDraftRecord({
+    localId: localDraftId.value || undefined,
+    formData: buildPayload(),
+    syncStatus,
+    lastError,
+    images,
+    documents,
+    existingRecord
+  })
+  record.userEmail = localStorage.getItem('user_email') || ''
+
+  const saved = await saveInspection(record)
+  localDraftId.value = saved.localId || saved.id
+  loadedFromLocal.value = true
+  if (!silent) setStatus('Rascunho salvo localmente.', 'success')
+
+  if (updateRoute && route.params.id === 'new') {
+    router.replace(`/form/${encodeURIComponent(localDraftId.value)}`)
+  }
+
+  return saved
+}
+
+async function saveDraftBeforeLeaving() {
+  if (saving.value || hasSavedSuccessfully.value) return
+  if (!hasDraftableData()) return
+  if (!loadedFromLocal.value && isEditMode.value && route.params.id !== 'new') return
+
+  await saveDraft({ silent: true, updateRoute: false })
+}
+
+async function submitForm() {
+  if (!validateCurrentStep()) return
+  const validation = validateEfluenteForSubmit(form)
+  if (!validation.valid) {
+    setStatus(validation.errors[0], 'error')
     return
   }
 
-  setStatus(isEditMode.value ? 'Alterações salvas' : 'Rascunho salvo', 'success', 2000)
+  const routeId = String(route.params.id || '')
+  const isEditingApiRecord = isEditMode.value && !loadedFromLocal.value && routeId && routeId !== 'new'
+  const mode = isEditingApiRecord ? 'edit' : 'create'
+  const payload = buildPayload()
+  const pkCdMeioAmbienteCptm = mode === 'edit'
+    ? (form.pkCdMeioAmbienteCptm || routeId)
+    : ''
 
-  returnToMain()
+  if (mode === 'create') {
+    delete payload.pkCdMeioAmbienteCptm
+  } else {
+    payload.pkCdMeioAmbienteCptm = pkCdMeioAmbienteCptm
+  }
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    const saved = await saveDraft({
+      silent: true,
+      updateRoute: false,
+      syncStatus: SYNC_STATUS.PENDING_SYNC
+    })
+    localDraftId.value = saved.localId || saved.id
+    loadedFromLocal.value = true
+    setStatus('Sem conexao. Registro salvo como aguardando envio.', 'warning')
+    return
+  }
+
+  saving.value = true
+  setStatus(isEditMode.value ? 'Atualizando efluente...' : 'Criando efluente...', 'info')
+  try {
+    const method = mode === 'edit' ? 'PUT' : 'POST'
+    const url = mode === 'edit'
+      ? `/api/efluentes/${pkCdMeioAmbienteCptm}`
+      : '/api/efluentes'
+
+    console.log('modo', mode)
+    console.log('pk', pkCdMeioAmbienteCptm)
+    console.log('localId', localDraftId.value)
+    console.log('payload', payload)
+    console.log('method', method)
+    console.log('url', url)
+
+    if (mode === 'edit' && !pkCdMeioAmbienteCptm) {
+      throw new Error('ID do sistema central nao encontrado para edicao.')
+    }
+
+    const filesToSend = selectedFiles.value.map(attachmentRecordToFile).filter(Boolean)
+    const response = filesToSend.length
+      ? (
+          mode === 'edit'
+            ? await updateEfluenteMultipartAPI(pkCdMeioAmbienteCptm, payload, filesToSend)
+            : await createEfluenteMultipartAPI(payload, filesToSend)
+        )
+      : (
+          mode === 'edit'
+            ? await updateEfluenteAPI(pkCdMeioAmbienteCptm, payload)
+            : await createEfluenteAPI(payload)
+        )
+    const pk = extractPk(response, payload)
+      || (mode === 'edit' ? pkCdMeioAmbienteCptm : '')
+    if (!pk) throw new Error('Sistema central nao retornou o ID do registro')
+    form.pkCdMeioAmbienteCptm = pk
+    selectedFiles.value = []
+    clearSelectedPreviewUrls()
+    if (localDraftId.value) {
+      await deleteInspection(localDraftId.value)
+      localDraftId.value = ''
+    }
+    loadedFromLocal.value = false
+    hasSavedSuccessfully.value = true
+    await loadAttachments()
+    setStatus('Registro enviado com sucesso.', 'success')
+    if (route.params.id !== pk) router.replace(`/form/${encodeURIComponent(pk)}`)
+  } catch (err) {
+    console.error('Erro ao salvar efluente', err)
+    if (localDraftId.value || loadedFromLocal.value) {
+      const saved = await saveDraft({
+        silent: true,
+        updateRoute: false,
+        syncStatus: SYNC_STATUS.ERROR,
+        lastError: err?.message || 'Erro ao enviar'
+      })
+      localDraftId.value = saved.localId || saved.id
+    }
+    setStatus(err?.message || 'Nao foi possivel salvar o efluente.', 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
+function onFilesSelected(event) {
+  const files = Array.from(event?.target?.files || [])
+  addSelectedFiles(files)
+  if (event?.target) event.target.value = ''
+}
+
+function onFilesDropped(event) {
+  isDraggingFiles.value = false
+  addSelectedFiles(Array.from(event?.dataTransfer?.files || []))
+}
+
+function createPreviewUrlForAttachment(attachment) {
+  if (!attachment?.type?.startsWith('image/') || !attachment?.blob) return ''
+  return URL.createObjectURL(attachment.blob)
+}
+
+function setSelectedAttachments(attachments = []) {
+  clearSelectedPreviewUrls()
+  selectedFiles.value = attachments.map(createAttachmentRecord)
+  selectedPreviewUrls.value = selectedFiles.value.map(createPreviewUrlForAttachment)
+}
+
+function addSelectedFiles(files = []) {
+  if (!files.length) return
+
+  const records = files.map(createAttachmentRecord)
+  selectedFiles.value = [...selectedFiles.value, ...records]
+  selectedPreviewUrls.value = [
+    ...selectedPreviewUrls.value,
+    ...records.map(createPreviewUrlForAttachment)
+  ]
+}
+
+async function removeSelectedFile(index) {
+  if (selectedPreviewUrls.value[index]) URL.revokeObjectURL(selectedPreviewUrls.value[index])
+  selectedFiles.value.splice(index, 1)
+  selectedPreviewUrls.value.splice(index, 1)
+
+  if (loadedFromLocal.value && localDraftId.value) {
+    await saveDraft({ silent: true, updateRoute: false })
+  }
+}
+
+function formatBytes(value) {
+  const size = Number(value || 0)
+  if (!size) return '0 B'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function displayValue(value) {
+  return value === '' || value === null || value === undefined ? 'Nao informado' : value
+}
+
+function clearAttachmentPreview() {
+  if (attachmentObjectUrl) URL.revokeObjectURL(attachmentObjectUrl)
+  attachmentObjectUrl = ''
+  attachmentPreviewUrl.value = ''
+  attachmentPreviewName.value = ''
+  attachmentPreviewType.value = ''
+}
+
+function clearSelectedPreviewUrls() {
+  for (const url of selectedPreviewUrls.value) {
+    if (url) URL.revokeObjectURL(url)
+  }
+  selectedPreviewUrls.value = []
+}
+
+async function previewAttachment(att) {
+  clearAttachmentPreview()
+  const blob = await getEfluenteAnexoBlobAPI(att.attachmentId)
+  attachmentObjectUrl = URL.createObjectURL(blob)
+  attachmentPreviewUrl.value = attachmentObjectUrl
+  attachmentPreviewName.value = att.attName || `Anexo ${att.attachmentId}`
+  attachmentPreviewType.value = blob.type || att.contentType || ''
+}
+
+async function downloadAttachment(att) {
+  const blob = await getEfluenteAnexoBlobAPI(att.attachmentId)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = att.attName || `anexo-${att.attachmentId}`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function initMap() {
+  const el = document.getElementById('efluente-map')
+  if (!el) return
+  if (!mapRef) {
+    mapRef = L.map(el, { center: [-23.55052, -46.633308], zoom: 13 })
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'OpenStreetMap' }).addTo(mapRef)
+    mapRef.on('click', (event) => updatePosition(event.latlng.lat, event.latlng.lng))
+  }
+  updateMapFromInputs()
+  requestCurrentLocation({ setFormWhenEmpty: !isEditMode.value })
+  setTimeout(() => mapRef?.invalidateSize(), 180)
+}
+
+function updatePosition(lat, lng) {
+  form.nrLatGrauDecimalWgs84 = Number(lat).toFixed(6)
+  form.nrLongGrauDecimalWgs84 = Number(lng).toFixed(6)
+  updateMapFromInputs()
+}
+
+function updateMapFromInputs() {
+  const lat = toNumberOrNull(form.nrLatGrauDecimalWgs84)
+  const lng = toNumberOrNull(form.nrLongGrauDecimalWgs84)
+  if (!mapRef || lat === null || lng === null) return
+  const latLng = [lat, lng]
+  if (mapMarker) {
+    mapMarker.setLatLng(latLng)
+  } else {
+    mapMarker = L.marker(latLng, { draggable: true }).addTo(mapRef)
+    mapMarker.on('dragend', (event) => {
+      const point = event.target.getLatLng()
+      updatePosition(point.lat, point.lng)
+    })
+  }
+  mapRef.setView(latLng, 16)
+}
+
+function captureGPS() {
+  requestCurrentLocation({ setFormWhenEmpty: true, forceStatus: true })
+}
+
+function goToCompactStep(compactIndex) {
+  const realIndex = compactIndexes.value[compactIndex]
+  if (Number.isInteger(realIndex)) goToStep(realIndex)
+}
+
+function requestCurrentLocation({ setFormWhenEmpty = false, forceStatus = false } = {}) {
+  if (!navigator.geolocation) {
+    setStatus('Geolocalizacao nao disponivel no navegador.', 'error')
+    return
+  }
+
+  if (!forceStatus && hasRequestedInitialLocation) return
+  hasRequestedInitialLocation = true
+
+  if (forceStatus) setStatus('Capturando localizacao...', 'info')
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const lat = position.coords.latitude
+      const lng = position.coords.longitude
+      setPersonMarker([lat, lng])
+
+      const hasCadastroCoords = toNumberOrNull(form.nrLatGrauDecimalWgs84) !== null
+        && toNumberOrNull(form.nrLongGrauDecimalWgs84) !== null
+
+      if (setFormWhenEmpty || !hasCadastroCoords) {
+        updatePosition(lat, lng)
+      } else if (mapRef) {
+        mapRef.setView([lat, lng], 16)
+      }
+
+      setStatus(forceStatus ? 'Localizacao atual capturada.' : '', forceStatus ? 'success' : 'info')
+    },
+    (err) => {
+      if (forceStatus) setStatus(`Erro ao capturar localizacao: ${err.message}`, 'error')
+      else console.warn('Nao foi possivel obter localizacao atual:', err)
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  )
+}
+
+function setPersonMarker(latLng) {
+  if (!mapRef) return
+
+  if (personMarker) {
+    personMarker.setLatLng(latLng)
+    return
+  }
+
+  const icon = L.divIcon({
+    html: '<div class="person-marker">🚶</div>',
+    className: 'person-marker-wrap',
+    iconSize: [38, 38],
+    iconAnchor: [19, 38]
+  })
+
+  personMarker = L.marker(latLng, {
+    icon,
+    zIndexOffset: 1000,
+    interactive: false
+  }).addTo(mapRef)
 }
 
 function returnToMain() {
-  if (getIsAdmin()) {
-    router.push('/main-admin')
-  } else {
-    router.push('/main-user')
-  }
-}
-
-function cancel() {
-  returnToMain()
-}
-
-function logout() {
-  localStorage.removeItem("auth_token")
-  localStorage.removeItem("user_role")
-
-  showUserMenu.value = false
-  router.push('/login')
-}
-function updateMapFromInputs() {
-  if (mapRef.value && form.latitude && form.longitude) {
-    setMarker([form.latitude, form.longitude])
-    mapRef.value.setView([form.latitude, form.longitude], 17)
-  }
-}
-
-async function toggleCamera() {
-  cameraError.value = ''
-
-  if (cameraActive.value) {
-    stopCamera()
-    return
-  }
-
-  if (!navigator.mediaDevices?.getUserMedia) {
-    cameraError.value = 'Seu navegador não suporta acesso à câmera.'
-    return
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
-      audio: false
-    })
-
-    cameraStream.value = stream
-    cameraActive.value = true
-
-    await nextTick()
-    if (cameraVideo.value) {
-      cameraVideo.value.srcObject = stream
-      await cameraVideo.value.play()
-    }
-  } catch (err) {
-    console.error('Erro ao abrir câmera:', err)
-    cameraError.value = 'Não foi possível acessar a câmera. Verifique as permissões do navegador.'
-  }
-}
-
-function stopCamera() {
-  cameraActive.value = false
-  cameraError.value = ''
-
-  if (cameraVideo.value) {
-    cameraVideo.value.srcObject = null
-  }
-
-  if (cameraStream.value) {
-    cameraStream.value.getTracks().forEach(track => track.stop())
-    cameraStream.value = null
-  }
-}
-
-async function captureFromCamera() {
-  if (!cameraVideo.value) return
-
-  const video = cameraVideo.value
-  const canvas = document.createElement('canvas')
-  canvas.width = video.videoWidth || 1280
-  canvas.height = video.videoHeight || 720
-
-  const context = canvas.getContext('2d')
-  if (!context) {
-    cameraError.value = 'Não foi possível capturar a foto.'
-    return
-  }
-
-  context.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92))
-  if (!blob) {
-    cameraError.value = 'Não foi possível gerar a imagem capturada.'
-    return
-  }
-
-  const file = new File([blob], `inspecao_${Date.now()}.jpg`, { type: 'image/jpeg' })
-
-  addPhotos([file])
-  stopCamera()
-}
-
-function onImagesSelected(event) {
-  const files = Array.from(event?.target?.files || [])
-  if (!files.length) return
-
-  addPhotos(files)
-
-  if (event?.target) {
-    event.target.value = ''
-  }
-}
-
-function removePhoto(index) {
-  if (index < 0 || index >= photoFiles.value.length) return
-
-  const nextFiles = [...photoFiles.value]
-  nextFiles.splice(index, 1)
-  setPhotos(nextFiles)
+  router.push(getIsAdmin() ? '/main-admin' : '/main-user')
 }
 </script>
 
 <style scoped>
-/* Keep visual language consistent with admin screens */
-.container {
-  min-height: 100vh;
-  width: 100%;
-  background: #fff;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 2rem 0
-}
-
-.admin-screen {
-  width: 100%;
-  max-width: 1100px;
-  background: #fff;
-  border-radius: 12px;
-  padding: 1.25rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem
-}
-
-.admin-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem
-}
-
-.logo {
-  width: 56px
-}
-
-.header-info h1 {
-  margin: 0;
-  font-size: 1.4rem
-}
-
-.subtitle {
-  margin: 0;
-  color: #666
-}
-
-.user-area {
-  margin-left: auto;
-  position: relative
-}
-
-.avatar {
-  background: #fff;
-  border: 1px solid #eee;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer
-}
-
-.user-menu {
-  position: absolute;
-  right: 0;
-  top: 48px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  padding: 0.35rem
-}
-
-.user-logout {
-  background: none;
-  border: none;
-  padding: 0.5rem 0.75rem;
-  color: #b71c1c;
-  cursor: pointer
-}
-
-.table-wrap {
-  background: transparent;
-  padding: 0
-}
-
-.map-section {
-  margin-top: 1rem;
-}
-
-.map-wrap {
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid #e6e6e9;
-}
-
-.map-controls {
-  margin-top: 0.5rem;
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-}
-
-.coords-display {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.5rem;
-  font-size: 0.85rem;
-  color: #444;
-}
-
-.coords-display input {
-  width: 100px;
-  padding: 0.25rem 0.5rem;
-  font-size: 0.85rem;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem
-}
-
-.row {
-  display: flex;
-  flex-direction: column
-}
-
-.photo-row {
-  margin-top: 0.25rem;
-}
-
-.photo-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.file-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.photo-help {
-  color: #6b7280;
-  font-size: 0.85rem;
-  margin-top: 0.25rem;
-}
-
-.photo-error {
-  margin-top: 0.5rem;
-  color: #b42318;
-  font-weight: 600;
-}
-
-.camera-panel {
-  margin-top: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.camera-video {
-  width: 100%;
-  max-width: 520px;
-  aspect-ratio: 4 / 3;
-  background: #0f172a;
-  border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  object-fit: cover;
-}
-
-.camera-controls {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.photo-preview-wrap {
-  margin-top: 0.65rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  overflow: hidden;
-  max-width: 360px;
-}
-
-.photo-preview-grid {
-  margin-top: 0.65rem;
+.wizard-shell {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: minmax(240px, 25%) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 12px;
+  align-items: start;
 }
 
-.photo-preview-item {
+.wizard-sidebar,
+.wizard-panel {
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.wizard-sidebar {
+  position: sticky;
+  top: 12px;
+  padding: 10px;
+  max-height: calc(100vh - 24px);
+  overflow: hidden;
+}
+
+.wizard-panel {
+  padding: 14px;
+  min-height: min(680px, calc(100vh - 120px));
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 14px;
 }
 
-.photo-preview {
-  width: 100%;
-  height: auto;
-  display: block;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  object-fit: cover;
+.tablet-stepper {
+  display: none;
 }
 
-.photo-remove-btn {
-  border: none;
-  background: #f3f4f6;
-  color: #991b1b;
-  border-radius: 8px;
-  padding: 0.45rem 0.75rem;
-  cursor: pointer;
-}
-
-.photo-count {
-  margin-top: 0.65rem;
-  color: #666;
-  font-size: 0.95rem;
-}
-
-.row.two {
+.step-heading {
   display: flex;
-  gap: 0.75rem
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--gray-200);
+  padding-bottom: 12px;
 }
 
-label {
-  font-weight: 600;
-  margin-bottom: 0.4rem
+.step-heading h2 {
+  font-size: clamp(1.4rem, 2vw, 2rem);
 }
 
-input {
-  width: 100%;
-  background-color: #f5f5f5;
-  font-weight: bolder;
-  padding: 0.65rem 0.75rem;
-  color: #606060;
-  border-radius: 8px;
-  border: 1px solid #e6e6e9;
-  font-size: 1rem;
+.step-heading p {
+  color: var(--gray-500);
 }
 
-input:focus {
-  outline: none;
-  border: 1px solid #ccc;
+.eyebrow {
+  color: var(--cptm-red) !important;
+  font-weight: 900;
+  text-transform: uppercase;
+  font-size: 0.78rem;
 }
 
-textarea {
-  width: 100%;
-  background-color: #f5f5f5;
-  font-weight: bolder;
-  padding: 0.65rem 0.75rem;
-  color: #606060;
-  border-radius: 8px;
-  border: 1px solid #e6e6e9;
-  font-size: 1rem;
+.wizard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
-textarea:focus {
-  outline: none;
-  border: 1px solid #ccc;
+.field.wide {
+  grid-column: 1 / -1;
 }
 
-.btn:focus {
-  outline: none;
-  border: 1px solid #ccc;
+.location-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 16px;
 }
 
-.actions {
+.map-card {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 12px;
   display: flex;
-  gap: 0.6rem;
-  margin-top: 0.25rem
+  flex-direction: column;
+  gap: 10px;
 }
 
-.btn-primary {
-  background: #097a5e;
-  color: #fff;
-  border: none;
-  padding: 0.6rem 0.9rem;
-  border-radius: 8px;
-  cursor: pointer;
-  width: 100%;
+.map-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.btn {
-  padding: 0.45rem 0.7rem;
-  border-radius: 8px;
-  border: 1px solid #eee;
-  background-color: #ffffff;
-  color: #333333;
-  cursor: pointer;
-  font-weight: 600;
-  transition: all 0.2s;
+#efluente-map {
+  height: 420px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  z-index: 1;
 }
 
-.btn:hover {
-  background-color: #f0f0f0;
+:deep(.person-marker-wrap) {
+  background: transparent;
+  border: 0;
 }
 
-.btn.draw {
-  color: #f7f7f8;
-  background: #929288;
+:deep(.person-marker) {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid var(--cptm-blue);
+  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.22);
+  font-size: 22px;
+  line-height: 1;
 }
 
-.btn.ghost {
-  color: #ee3338;
-  background-color: transparent;
-  border-color: #ee3338;
+.attachments-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
 }
 
-.btn.ghost:hover {
-  background-color: rgba(238, 51, 56, 0.1);
+.upload-panel,
+.attachment-column,
+.review-card,
+.preview-panel {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--gray-25);
 }
 
-.status {
-  margin-top: 0.5rem;
-  color: #444;
-  font-weight: 600
+.upload-panel,
+.attachment-column.wide {
+  grid-column: 1 / -1;
 }
 
-.status.success {
-  color: #155724;
-  background: #d4edda;
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px
+.upload-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(220px, auto);
+  gap: 12px;
+  align-items: center;
+  background: #fff;
 }
 
-.status.error {
-  color: #721c24;
-  background: #f8d7da;
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px
+.upload-panel.dragging {
+  border-color: var(--cptm-blue);
+  box-shadow: 0 0 0 4px rgba(43, 92, 158, 0.12);
 }
 
-.status.info {
-  color: #0c5460;
-  background: #d1ecf1;
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px
+.upload-copy {
+  min-width: 0;
 }
 
-.status.warning {
-  color: #856404;
-  background: #fff3cd;
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px
+.upload-counters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-@media (max-width:720px) {
-  .row.two {
-    flex-direction: column
-  }
-
-  .actions {
-    flex-direction: column
-  }
+.upload-counters span {
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  background: var(--gray-50);
+  padding: 5px 9px;
+  color: var(--gray-700);
+  font-size: 0.82rem;
+  font-weight: 900;
 }
 
-/* Pagination styles */
-.pagination {
+.upload-drop {
+  min-height: 44px;
+  border: 2px dashed var(--gray-300);
+  border-radius: var(--radius);
+  background: var(--white);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  margin: 0.5rem 0
-}
-
-.pagination.arrows {
   justify-content: center;
-  gap: 0.6rem;
-}
-
-.page-buttons {
-  display: flex;
-  gap: 0.4rem;
-  justify-content: center;
-  flex: 1
-}
-
-.page-btn {
-  padding: 0.35rem 0.6rem;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  background-color: #ffffff;
-  color: #333333;
-  font-weight: 600;
+  white-space: nowrap;
+  padding: 8px 12px;
+  color: var(--cptm-red);
+  font-weight: 900;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
-.page-btn:hover {
-  background-color: #f0f0f0;
+.upload-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-.page-btn.active {
-  background-color: #097a5e;
-  color: #ffffff;
-  border-color: transparent;
+.upload-drop:focus-within {
+  border-color: var(--cptm-red);
+  box-shadow: 0 0 0 3px rgba(215, 25, 32, 0.12);
 }
 
-@media (max-width:480px) {
-  .pagination {
+.attachment-column {
+  min-height: 0;
+}
+
+.attachment-column .empty-state {
+  padding: 14px;
+}
+
+.document-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.document-list .attachment-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.document-list .attachment-card span {
+  grid-column: 1;
+}
+
+.document-list .attachment-card .btn {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+
+/* Legacy inner span styles kept harmless for older markup. */
+.upload-drop span {
+  color: var(--gray-500);
+}
+
+/*
+  The upload drop target used to be a large empty square. Keep the visual compact
+  so the form starts close to the top, especially on phones.
+*/
+.upload-drop.old-large {
+  min-height: 130px;
+  place-items: center;
+  text-align: center;
+}
+
+.attachment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.attachment-grid.compact {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.attachment-card {
+  min-width: 0;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--white);
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.attachment-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--gray-100);
+}
+
+.attachment-card strong,
+.attachment-card span {
+  overflow-wrap: anywhere;
+}
+
+.review-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.review-card dl {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 12px 0 0;
+}
+
+.review-card dt {
+  color: var(--gray-500);
+  font-weight: 800;
+}
+
+.review-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.preview-header,
+.card-actions,
+.wizard-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.preview-header {
+  justify-content: space-between;
+}
+
+.preview-panel img {
+  width: min(100%, 720px);
+  max-height: 520px;
+  object-fit: contain;
+  border-radius: var(--radius);
+  border: 1px solid var(--gray-200);
+  margin-top: 12px;
+}
+
+.wizard-actions {
+  justify-content: flex-end;
+  margin-top: auto;
+  border-top: 1px solid var(--gray-200);
+  padding-top: 12px;
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+}
+
+@media (max-width: 1100px) {
+  .wizard-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-sidebar {
+    display: none;
+  }
+
+  .tablet-stepper {
+    display: flex;
     flex-direction: column;
-    gap: 0.5rem
+    gap: 10px;
+    border-bottom: 1px solid var(--gray-200);
+    padding-bottom: 10px;
   }
 
-  .pagination.arrows {
-    flex-direction: row;
-    justify-content: center;
-    gap: 0.6rem;
+  .location-layout {
+    grid-template-columns: 1fr;
   }
 
-  .page-buttons {
-    width: 100%;
-    overflow-x: auto
-  }
-
-  .page-btn {
-    flex: 0 0 auto
-  }
-
-  .actions {
-    flex-direction: column
+  .wizard-panel {
+    min-height: auto;
   }
 }
-.person-icon {
-  background: transparent;
-  border: none;
-  cursor: default;
+
+@media (max-width: 760px) {
+  .wizard-shell {
+    margin-top: 10px;
+  }
+
+  .tablet-stepper {
+    display: none;
+  }
+
+  .wizard-panel {
+    padding: 10px;
+    gap: 12px;
+  }
+
+  .wizard-grid,
+  .attachments-layout,
+  .review-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .step-heading,
+  .wizard-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .step-heading {
+    display: none;
+  }
+
+  .upload-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-counters {
+    order: 2;
+  }
+
+  .upload-drop {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .upload-actions {
+    order: 3;
+    flex-direction: column;
+  }
+
+  .attachment-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .document-list .attachment-card {
+    grid-template-columns: 1fr;
+  }
+
+  .document-list .attachment-card .btn {
+    grid-row: auto;
+    grid-column: auto;
+    width: 100%;
+  }
+
+  .wizard-actions {
+    margin-inline: -10px;
+    padding: 10px;
+    box-shadow: 0 -10px 24px rgba(16, 24, 40, 0.08);
+  }
+
+  .wizard-actions .btn,
+  .wizard-actions .btn-primary {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .review-card dl {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

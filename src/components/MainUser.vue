@@ -6,7 +6,8 @@
                 <div class="header-left">
                     <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
                     <div class="header-info">
-                        <h1>Inspeções</h1>
+                        <h1>Efluentes</h1>
+                        <p class="subtitle">Acompanhe rascunhos, envios pendentes e registros enviados</p>
                     </div>
                 </div>
                 <div class="user-area">
@@ -20,7 +21,7 @@
             <div v-if="modalVisible" class="modal-overlay" role="dialog" aria-modal="true">
                 <div class="modal">
                     <h3>{{ modalAction === 'delete' ? 'Confirmar exclusão' : 'Confirmar envio' }}</h3>
-                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} a inspeção "{{
+                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} o registro "{{
                         modalTarget?.title }}"?</p>
                     <div class="modal-actions">
                         <button class="btn cancel" @click="cancelModal">Cancelar</button>
@@ -33,6 +34,12 @@
 
             <div class="controls">
                 <div v-if="status" class="sync-message">{{ status }}</div>
+                <div class="summary-grid">
+                    <div class="summary-card"><span>Total</span><strong>{{ dashboardStats.total }}</strong></div>
+                    <div class="summary-card"><span>Aguardando Envio</span><strong>{{ dashboardStats.pending }}</strong></div>
+                    <div class="summary-card"><span>Registros Enviados</span><strong>{{ dashboardStats.sent }}</strong></div>
+                    <div class="summary-card"><span>Rascunhos</span><strong>{{ dashboardStats.drafts }}</strong></div>
+                </div>
                 <QuickGrid 
                     :viewFilter="viewFilter" 
                     @setFilter="setFilter" 
@@ -41,13 +48,13 @@
             </div>
 
             <div class="table-wrap">
-                <input class="inspection-search" v-model="searchQuery" placeholder="Buscar por título..." />
-                <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhuma inspeção neste filtro.</div>
-                <div v-if="loadingApi" class="notice" style="color:blue;">Sincronizando com o banco de dados...</div>
+                <input class="inspection-search" v-model="searchQuery" placeholder="Buscar por elemento, municipio ou linha..." />
+                <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhum efluente neste filtro.</div>
+                <div v-if="loadingApi" class="notice" >Sincronizando com o sistema central...</div>
 
                 <InspectionList
                     :items="filteredInspections"
-                    title="Inspeções"
+                    title="Efluentes"
                     id-prefix="user-ins-"
                     :show-continue="true"
                     :show-send="true"
@@ -56,6 +63,7 @@
                     :on-send="(ins) => confirmAction('send', ins)"
                     :on-details="openDetails"
                     :on-delete="(ins) => confirmAction('delete', ins)"
+                    :on-cancel-pending="cancelPendingSend"
                 />
             </div>
         </div>
@@ -75,7 +83,8 @@ import { useRouter } from 'vue-router'
 import { onMounted } from 'vue'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
 import { syncInspections } from '../services/sync'
-import { getToken, getInspectionsAPI } from '../services/api'
+import { deleteEfluenteAPI, extractEfluenteItems, getToken, getMeusEfluentesAPI } from '../services/api'
+import { normalizeApiEfluenteListItem, normalizeLocalEfluenteRecord, SYNC_STATUS } from '../services/efluenteModel'
 import { Plus, Calendar, Send, ClipboardList, LogOut, User } from 'lucide-vue-next'
 import QuickGrid from './QuickGrid.vue'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
@@ -86,17 +95,18 @@ onMounted(async () => {
         const data = await getAllInspections()
         const currentUser = localStorage.getItem('user_email')
 
-        const minhasInspecoes = data.filter(i => {
-            return i.userEmail === currentUser
-        })
+        const minhasInspecoes = data
+            .map(normalizeLocalEfluenteRecord)
+            .filter(Boolean)
+            .filter(i => !i.userEmail || i.userEmail === currentUser)
 
         store.inspections = minhasInspecoes
 
     } catch (err) {
-        console.error("Erro ao carregar inspeções do IndexedDB", err)
+        console.error("Erro ao carregar rascunhos locais", err)
     }
 
-    // Carrega do backend e renderiza as duas via 'all'
+    // Carrega do sistema central e renderiza junto com os rascunhos locais.
     await setFilter('all')
 })
 
@@ -129,25 +139,7 @@ function closeDetails() {
 }
 
 function normalizeInspection(i) {
-    return {
-        ...i,
-        id: i.id ?? i.Id,
-        title: i.title ?? i.Title ?? i.titulo ?? 'Sem título',
-        location: i.location ?? i.Location,
-        latitude: i.latitude ?? i.Latitude,
-        longitude: i.longitude ?? i.Longitude,
-        address: i.address ?? i.Address,
-        notes: i.notes ?? i.Notes,
-        q1: i.q1 ?? i.Q1,
-        q2: i.q2 ?? i.Q2,
-        q3: i.q3 ?? i.Q3,
-        q4: i.q4 ?? i.Q4,
-        q5: i.q5 ?? i.Q5,
-        q6: i.q6 ?? i.Q6,
-        createdAt: i.createdAt ?? i.CreatedAt,
-        usuarioId: i.usuarioId ?? i.UsuarioId,
-        status: i.status ?? 'Enviado'
-    }
+    return i?.formData ? { ...i, ...i.formData } : normalizeApiEfluenteListItem(i)
 }
 
 // ✅ AGORA CRIA USANDO O STORE
@@ -155,7 +147,7 @@ async function createInspection(returnObj = false) {
 
     const title =
         newTitle.value.trim() ||
-        `Inspeção ${inspections.value.length + 1}`
+        `Registro ${inspections.value.length + 1}`
 
     const ins = {
         id: 'i' + Date.now(),
@@ -196,22 +188,26 @@ function showToast(msg, type = 'success', duration = 3000) {
 }
 
 async function sendInspection(ins) {
-    const idx = store.inspections.findIndex(i => i.id === ins.id)
+    const normalized = normalizeLocalEfluenteRecord(ins)
+    if (!normalized) return
+    normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
+    normalized.status = 'Aguardando Envio'
 
-    // persist as Aguardando Rede
     try {
-        ins.status = 'Aguardando Rede'
-        await saveInspection(ins)
-        if (idx >= 0) store.inspections[idx] = { ...ins }
+        const saved = await saveInspection(normalized)
+        const savedId = String(saved.localId || saved.id)
+        const idx = store.inspections.findIndex(i => String(i.localId || i.id) === savedId)
+        if (idx >= 0) store.inspections[idx] = { ...saved }
+        else store.inspections.push(saved)
     } catch (e) {
         console.error('Erro ao persistir localmente', e)
-        status.value = 'Erro ao salvar localmente. Fica em Aguardando Rede.'
+        status.value = 'Erro ao salvar localmente. Ficara aguardando envio.'
         return
     }
 
     // if offline, notify and return
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        status.value = 'Sem conexão. Inspeção ficará em Aguardando Rede.'
+        status.value = 'Sem conexao. O registro ficara aguardando envio.'
         return
     }
 
@@ -223,35 +219,74 @@ async function sendInspection(ins) {
     }
 
     // attempt sync
-    status.value = 'Sincronizando com o Back-end...'
+    status.value = 'Sincronizando com o sistema central...'
     try {
         await syncInspections()
+        await setFilter(viewFilter.value)
 
-        const exists = store.inspections.find(i => i.id === ins.id)
+        const localId = String(normalized.localId || normalized.id)
+        const exists = store.inspections.find(i => String(i.localId || i.id) === localId)
         if (!exists) {
-            status.value = 'Inspeção enviada e salva no banco de dados com sucesso!'
+            status.value = 'Registro enviado com sucesso.'
         } else {
-            status.value = 'Erro ao enviar para o Back-end. A API (Oracle) pode estar fora do ar. Mantido no cache local para tentar mais tarde.'
+            status.value = 'Erro ao enviar para o sistema central. O registro foi mantido para tentar mais tarde.'
         }
     } catch (e) {
         console.error('Erro ao sincronizar', e)
-        status.value = 'Erro: A conexão com o Back-end falhou. Re-tentaremos automaticamente.'
+        status.value = 'Erro: a conexao com o sistema central falhou. Tentaremos automaticamente.'
     }
 }
 
+async function cancelPendingSend(ins) {
+    const normalized = normalizeLocalEfluenteRecord(ins)
+    if (!normalized) return
+
+    normalized.syncStatus = SYNC_STATUS.DRAFT
+    normalized.status = 'Rascunho'
+    const saved = await saveInspection(normalized)
+    const id = String(saved.localId || saved.id)
+    const idx = store.inspections.findIndex(i => String(i.localId || i.id) === id)
+    if (idx >= 0) store.inspections[idx] = saved
+    showToast('Envio cancelado. Registro voltou para rascunho.', 'success')
+}
+
 function goToForm(ins) {
-    router.push(`/form/${ins.id}`)
+    const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
+    const id = isLocal
+        ? (ins.localId || ins.id)
+        : (ins.pkCdMeioAmbienteCptm || ins.serverId)
+
+    if (!id) {
+        showToast('ID do efluente nao encontrado.', 'error')
+        return
+    }
+
+    router.push(`/form/${encodeURIComponent(id)}`)
 }
 
 async function deleteInspection(ins) {
 
     try {
-        await deleteInspectionDB(ins.id)
-        store.inspections = store.inspections.filter(i => i.id !== ins.id)
-        showToast('Inspeção apagada localmente.', 'success')
+        const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
+        const id = isLocal
+            ? (ins.localId || ins.id)
+            : (ins.pkCdMeioAmbienteCptm || ins.serverId)
+        const localItem = isLocal
+            ? store.inspections.find(i => String(i.localId || i.id) === String(id))
+            : null
+
+        if (localItem) {
+            await deleteInspectionDB(id)
+            store.inspections = store.inspections.filter(i => String(i.localId || i.id) !== String(id))
+            showToast('Efluente apagado localmente.', 'success')
+        } else {
+            await deleteEfluenteAPI(id)
+            sentApiData.value = sentApiData.value.filter(i => String(i.pkCdMeioAmbienteCptm || i.serverId) !== String(id))
+            showToast('Efluente apagado do servidor.', 'success')
+        }
     } catch (err) {
-        console.error("Erro ao apagar inspeção", err)
-        showToast('Erro ao apagar inspeção localmente.', 'error')
+        console.error('Erro ao apagar efluente', err)
+        showToast('Erro ao apagar efluente.', 'error')
     }
 
 }
@@ -272,20 +307,16 @@ async function setFilter(key) {
     if (key === 'sent' || key === 'all') {
         loadingApi.value = true
         try {
-            let res = await getInspectionsAPI()
+            const response = await getMeusEfluentesAPI({ pageSize: 100 })
+            const arr = extractEfluenteItems(response)
 
-            let arr = []
-            if (res && res.data && Array.isArray(res.data)) arr = res.data
-            else if (Array.isArray(res)) arr = res
-
-            sentApiData.value = arr.map(i => ({
-                ...i,
-                status: 'Enviado'
-            }))
+            console.log('dados api', response)
+            sentApiData.value = arr.map(normalizeApiEfluenteListItem)
+            console.log('dados exibidos', sentApiData.value)
 
         } catch (e) {
-            console.error("Erro API Sent", e)
-            status.value = 'Erro ao buscar inspeções no banco.'
+            console.error("Erro ao carregar registros enviados", e)
+            status.value = 'Erro ao buscar registros enviados.'
         } finally {
             loadingApi.value = false
         }
@@ -294,6 +325,24 @@ async function setFilter(key) {
 
 const searchQuery = ref('')
 
+const dashboardStats = computed(() => {
+    const local = inspections.value || []
+    const sent = sentApiData.value || []
+    const mergedIds = new Set([
+        ...local.map(i => String(i.localId || i.id || '')),
+        ...sent.map(i => String(i.pkCdMeioAmbienteCptm || i.serverId || ''))
+    ])
+    const pending = local.filter(i => i.syncStatus === SYNC_STATUS.PENDING_SYNC).length
+    const drafts = local.filter(i => i.syncStatus === SYNC_STATUS.DRAFT).length
+
+    return {
+        total: mergedIds.size,
+        pending,
+        sent: sent.length,
+        drafts
+    }
+})
+
 // ✅ FILTRO AGORA USA STORE E MOSTRA TODAS
 const filteredInspections = computed(() => {
     let result = []
@@ -301,15 +350,15 @@ const filteredInspections = computed(() => {
         result = sentApiData.value
     } else if (viewFilter.value === 'all') {
         const merged = [...inspections.value]
-        const localIds = new Set(merged.map(i => String(i.id)))
+        const localIds = new Set(merged.map(i => String(i.pkCdMeioAmbienteCptm || i.localId || i.id)))
         for (const s of sentApiData.value) {
-            if (!localIds.has(String(s.id))) {
+            if (!localIds.has(String(s.pkCdMeioAmbienteCptm || s.serverId))) {
                 merged.push(s)
             }
         }
         result = merged.sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     } else if (viewFilter.value === 'scheduled') {
-        result = inspections.value.filter(i => i.status !== 'Enviado')
+        result = inspections.value.filter(i => i.syncStatus !== SYNC_STATUS.SENT)
     } else {
         result = inspections.value
     }
@@ -318,8 +367,18 @@ const filteredInspections = computed(() => {
     if (!q) return result
 
     return result.filter(i => {
-        const title = String(i.title || i.titulo || '').toLowerCase()
-        return title.includes(q)
+        const haystack = [
+            i.formData?.txNmElementoMonitoramento,
+            i.formData?.txNrElementoMonitoramento,
+            i.formData?.txMunicipio,
+            i.formData?.txLinhaCptm,
+            i.txNmElementoMonitoramento,
+            i.txNrElementoMonitoramento,
+            i.txMunicipio,
+            i.txLinhaCptm,
+            i.txEstacaoCptm
+        ].join(' ').toLowerCase()
+        return haystack.includes(q)
     })
 })
 

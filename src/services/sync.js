@@ -1,126 +1,111 @@
 import { ref } from 'vue'
-import { getAllInspections, saveInspection, deleteInspection } from './db'
+import { deleteInspection, getAllInspections, saveInspection } from './db'
 import { useInspectionStore } from '../stores/inspectionStore'
 import {
-    createInspectionAPI,
-    updateInspectionAPI,
+    createEfluenteAPI,
+    createEfluenteMultipartAPI,
     getInspectionsAPI,
     getToken,
-    uploadInspectionImageAPI
+    updateEfluenteAPI,
+    updateEfluenteMultipartAPI
 } from './api'
+import {
+    buildEfluentePayload,
+    getDraftAttachmentFiles,
+    normalizeApiEfluenteListItem,
+    normalizeLocalEfluenteRecord,
+    SYNC_STATUS,
+    validateEfluenteForSubmit
+} from './efluenteModel'
 
-let syncing = false 
+let syncing = false
 
 export const syncState = ref('')
 
-/**
- * Send one inspection now. Respects offline-first: always persists locally first.
- * Returns the inspection object with updated `status` and optional `serverId`.
- */
-export async function sendInspectionNow(inspection) {
+export async function sendInspectionNow(record) {
+    const normalized = normalizeLocalEfluenteRecord(record)
+    if (!normalized) return record
+
+    if (normalized.syncStatus === SYNC_STATUS.DRAFT) return normalized
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
+        await saveInspection(normalized)
+        return normalized
+    }
+
+    const token = getToken()
+    if (!token) {
+        normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
+        await saveInspection(normalized)
+        return normalized
+    }
+
+    const validation = validateEfluenteForSubmit(normalized.formData)
+    if (!validation.valid) {
+        normalized.syncStatus = SYNC_STATUS.ERROR
+        normalized.lastError = validation.errors[0]
+        await saveInspection(normalized)
+        return normalized
+    }
+
+    const hadPk = Boolean(normalized.formData?.pkCdMeioAmbienteCptm)
+    const payload = buildEfluentePayload(normalized.formData)
+    const mode = hadPk ? 'edit' : 'create'
+    const method = mode === 'edit' ? 'PUT' : 'POST'
+    const url = mode === 'edit'
+        ? `/api/efluentes/${payload.pkCdMeioAmbienteCptm}`
+        : '/api/efluentes'
+
+    if (mode === 'create') {
+        delete payload.pkCdMeioAmbienteCptm
+    }
+
     try {
-        // ensure local id
-        if (!inspection.id) inspection.id = 'i' + Date.now()
+        console.log('modo', mode)
+        console.log('pk', payload.pkCdMeioAmbienteCptm || '')
+        console.log('localId', normalized.localId)
+        console.log('payload', payload)
+        console.log('method', method)
+        console.log('url', url)
 
-        // persist locally (don't change status here if already set)
-        try { await saveInspection(inspection) } catch (e) {
-            // on DB error, mark as awaiting network
-            try {
-                inspection.status = 'Aguardando Rede'
-                await saveInspection(inspection)
-            } catch (err) { /* ignore */ }
-            return inspection
+        const files = getDraftAttachmentFiles(normalized)
+        const response = files.length
+            ? (
+                mode === 'edit'
+                    ? await updateEfluenteMultipartAPI(payload.pkCdMeioAmbienteCptm, payload, files)
+                    : await createEfluenteMultipartAPI(payload, files)
+            )
+            : (
+                mode === 'edit'
+                    ? await updateEfluenteAPI(payload.pkCdMeioAmbienteCptm, payload)
+                    : await createEfluenteAPI(payload)
+            )
+
+        const pk = response?.pkCdMeioAmbienteCptm
+            || response?.PkCdMeioAmbienteCptm
+            || response?.data?.pkCdMeioAmbienteCptm
+            || payload.pkCdMeioAmbienteCptm
+
+        await deleteInspection(normalized.localId || normalized.id)
+        return {
+            ...normalized,
+            pkCdMeioAmbienteCptm: pk,
+            syncStatus: SYNC_STATUS.SENT
         }
-
-        // if offline, mark awaiting network and return
-        if (typeof navigator !== 'undefined' && !navigator.onLine) {
-            inspection.status = 'Aguardando Rede'
-            try { await saveInspection(inspection) } catch (e) { /* ignore */ }
-            return inspection
-        }
-
-        // only attempt send if status is 'Aguardando Rede'
-        if (inspection.status !== 'Aguardando Rede') {
-            return inspection
-        }
-
-        // require token to attempt send
-        const token = getToken()
-        if (!token) {
-            inspection.status = 'Aguardando Rede'
-            await saveInspection(inspection)
-            return inspection
-        }
-
-        // prepare payload for server (remove local-only fields)
-        const payload = { ...inspection }
-        delete payload.id
-        delete payload.status
-        delete payload.photo
-        delete payload.photoName
-        delete payload.photoType
-
-        // if serverId exists, try update, else create
-        let serverRes = null
-        try {
-            console.log('Enviando payload para a API:', payload)
-            if (inspection.serverId) {
-                serverRes = await updateInspectionAPI(inspection.serverId, payload)
-            } else {
-                serverRes = await createInspectionAPI(payload)
-            }
-            console.log('Resposta sucesso da API:', serverRes)
-        } catch (err) {
-            console.error('Erro de rede ou da API ao enviar inspeção:', err)
-            // network/server error: mark as awaiting network
-            inspection.status = 'Aguardando Rede'
-            try { await saveInspection(inspection) } catch (e) { /* ignore */ }
-            return inspection
-        }
-
-        // on success, set serverId
-        const sid = serverRes?.id || serverRes?.serverId || serverRes?.data?.id
-        if (sid) inspection.serverId = sid
-
-        // upload images separately if any exist in the local copy
-        const photos = Array.isArray(inspection.photos) && inspection.photos.length
-            ? inspection.photos
-            : inspection.photo
-                ? [inspection.photo]
-                : []
-
-        if (sid && photos.length) {
-            try {
-                for (const photo of photos) {
-                    await uploadInspectionImageAPI(sid, photo)
-                }
-            } catch (imageErr) {
-                console.error('Erro ao enviar imagem da inspeção:', imageErr)
-                inspection.status = 'Aguardando Rede'
-                await saveInspection(inspection)
-                return inspection
-            }
-        }
-
-        inspection.status = 'Enviado'
-
-        // remove local copy once the server accepted it
-        try { await deleteInspection(inspection.id) } catch (e) { /* ignore */ }
-
-        // return server-side info (include serverId)
-        return { ...inspection, status: 'Enviado', serverId: sid }
     } catch (err) {
-        // fallback: mark as awaiting network and persist
-        try {
-            inspection.status = 'Aguardando Rede'
-            await saveInspection(inspection)
-        } catch (e) { /* ignore */ }
-        return inspection
+        normalized.syncStatus = SYNC_STATUS.ERROR
+        normalized.lastError = err?.message || 'Erro ao sincronizar'
+        await saveInspection(normalized)
+        return normalized
     }
 }
 
 export async function syncInspections() {
+    if (syncing) return
+    syncing = true
     syncState.value = 'Sincronizando...'
+
     try {
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
             syncState.value = 'Offline'
@@ -128,161 +113,55 @@ export async function syncInspections() {
         }
 
         const all = await getAllInspections()
-        const pending = (all || []).filter(i => i.status === 'Aguardando Rede')
-
-        if (!pending.length) {
-            syncState.value = 'Nada para enviar'
-            return
-        }
+        const pending = (all || [])
+            .map(normalizeLocalEfluenteRecord)
+            .filter(item => item?.syncStatus === SYNC_STATUS.PENDING_SYNC)
 
         const store = useInspectionStore()
-        let deletedCount = 0
+        let sentCount = 0
 
-        for (const inspection of pending) {
-            try {
-                const updated = await sendInspectionNow(inspection)
-
-                if (updated && updated.status === 'Enviado') {
-                    // remove from pinia store (local ID was deleted by sendInspectionNow)
-                    const idx = store.inspections.findIndex(i => i.id === updated.id)
-                    if (idx >= 0) store.inspections.splice(idx, 1)
-
-                    deletedCount++
-                } else {
-                    // if not sent, ensure store has the latest state
-                    const idx = store.inspections.findIndex(i => i.id === updated.id)
-                    if (idx >= 0) store.inspections[idx] = { ...updated }
-                    else store.inspections.push({ ...updated })
-                }
-
-            } catch (err) {
-                // continue with next
-            }
+        for (const item of pending) {
+            const result = await sendInspectionNow(item)
+            if (result?.syncStatus === SYNC_STATUS.SENT) sentCount++
         }
 
-        // after uploading pending items, fetch server-side inspections and persist locally
+        const refreshedLocal = (await getAllInspections()).map(normalizeLocalEfluenteRecord).filter(Boolean)
+        store.inspections = refreshedLocal
+
         try {
-            if (typeof navigator !== 'undefined' && navigator.onLine) {
-                const token = getToken()
-                if (token) {
-                    const serverItems = await getInspectionsAPI()
-                    if (Array.isArray(serverItems)) {
-                        for (const s of serverItems) {
-                            try {
-
-                                const exists = store.inspections.find(i => i.serverId === s.id || String(i.id) === String(s.id))
-
-                                if (exists) continue
-
-                                const localObj = { ...s, serverId: s.id, status: 'Enviado' }
-
-                                // keep server items only in memory so IndexedDB stays as offline cache
-                                const idx2 = store.inspections.findIndex(i => i.serverId === s.id || String(i.id) === String(s.id))
-                                if (idx2 >= 0) store.inspections[idx2] = { ...localObj }
-                                else store.inspections.push({ ...localObj })
-                            } catch (e) {
-                                // ignore per-item errors
-                            }
+            const token = getToken()
+            if (token) {
+                const serverItems = await getInspectionsAPI()
+                if (Array.isArray(serverItems)) {
+                    const localIds = new Set(store.inspections.map(item => String(item.localId || item.id)))
+                    for (const item of serverItems.map(normalizeApiEfluenteListItem)) {
+                        if (!localIds.has(String(item.pkCdMeioAmbienteCptm || item.id))) {
+                            store.inspections.push(item)
                         }
                     }
                 }
             }
-        } catch (e) {
-            // ignore server fetch errors
+        } catch {
+            // Server refresh is best effort.
         }
 
-        try {
-            const localItems = await getAllInspections()
-            for (const item of localItems || []) {
-                const status = String(item?.status || '').trim().toLowerCase()
-                if (status === 'enviado' || item.serverId) {
-                    try { await deleteInspection(item.id) } catch (e) { /* ignore */ }
-                }
-            }
-        } catch (e) {
-            // ignore cleanup errors
-        }
-
-        const refreshed = await getAllInspections()
-        store.inspections = [...refreshed]
-
-        if (deletedCount > 0) {
-            syncState.value = `${deletedCount} inspeção(ões) sincronizada(s) e removida(s) do armazenamento local`
-            try {
-                window.dispatchEvent(new CustomEvent('inspections-synced', { detail: { count: deletedCount } }))
-            } catch (e) {
-                // ignore if window not available
-            }
-        } else {
-            syncState.value = 'Sincronização concluída'
-        }
+        syncState.value = sentCount
+            ? `${sentCount} efluente(s) sincronizado(s)`
+            : 'Sincronizacao concluida'
     } catch (err) {
-        syncState.value = 'Erro na sincronização'
+        console.error('Erro na sincronizacao', err)
+        syncState.value = 'Erro na sincronizacao'
+    } finally {
+        syncing = false
     }
 }
-
-
-// export function initSync() {
-//     try {
-//         window.addEventListener('online', () => {
-//             if (navigator.onLine) {
-//                 const token = getToken()
-//                 if (token) syncInspections()
-//             }
-//         })
-//     } catch (e) {
-//         // ignore non-browser env
-//     }
-// }
 
 export function initSync() {
-
-    async function runSync() {
-
-        if (syncing) return
-
-        if (!navigator.onLine) return
-
-        const token = getToken()
-
-        if (!token) return
-
-        try {
-
-            syncing = true
-
-            console.log('Tentando sincronização automática...')
-
-            await syncInspections()
-
-        } catch (e) {
-
-            console.error('Erro no sync automático:', e)
-
-        } finally {
-
-            syncing = false
-
-        }
-    }
-
     try {
-
-        window.addEventListener('online', runSync)
-
-        setInterval(runSync, 5000)
-
-    } catch (e) {
-
-        console.error(e)
-
+        window.addEventListener('online', () => {
+            if (navigator.onLine && getToken()) syncInspections()
+        })
+    } catch {
+        // ignore non-browser env
     }
 }
-
-export default {
-    sendInspectionNow,
-    syncInspections,
-    initSync,
-    syncState
-}
-

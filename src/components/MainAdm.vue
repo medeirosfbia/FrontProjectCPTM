@@ -7,7 +7,7 @@
                     <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
                     <div class="header-info">
                         <h1>Área do Administrador</h1>
-                        <p class="subtitle">Gestão e Inspeções</p>
+                        <p class="subtitle">Gestao de usuarios e registros</p>
                     </div>
                 </div>
                 <div class="user-area">
@@ -26,7 +26,7 @@
                 </button>
                 <button class="tab-btn" :class="{ active: currentTab === 'my-inspections' }"
                     @click="setTab('my-inspections')">
-                    Minhas Inspeções
+                    Meus Registros
                 </button>
             </div>
 
@@ -34,7 +34,7 @@
             <div v-if="modalVisible" class="modal-overlay" role="dialog" aria-modal="true">
                 <div class="modal">
                     <h3>{{ modalAction === 'delete' ? 'Confirmar exclusão' : 'Confirmar envio' }}</h3>
-                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} a inspeção "{{
+                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} o registro "{{
                         modalTarget?.title }}"?</p>
                     <div class="modal-actions">
                         <button class="btn cancel" @click="cancelModal">Cancelar</button>
@@ -53,20 +53,20 @@
                 <!-- Visualizando um usuário específico -->
                 <div v-if="selectedUser" class="user-details">
                     <button class="btn ghost back-btn" @click="selectedUser = null">← Voltar para lista</button>
-                    <h2 class="user-inspections-title">Inspeções de {{ selectedUser.name }}</h2>
+                    <h2 class="user-inspections-title">Registros de {{ selectedUser.name }}</h2>
                     <input
                         class="inspection-search"
                         v-model="userInspectionSearchQuery"
-                        placeholder="Buscar por título..."
+                        placeholder="Buscar por elemento, municipio ou linha..."
                     />
                     <div class="table-wrap">
                         <!-- <div v-if="!userInspections.length" class="notice">{{ selectedUser.name }} não possui inspeções ainda.</div> -->
                         <div v-if="loadingUserInspections" class="notice">
-                            Carregando inspeções...
+                            Carregando registros...
                         </div>
 
                         <div v-else-if="!userInspections.length" class="notice">
-                            {{ selectedUser.name }} não possui inspeções ainda.
+                            {{ selectedUser.name }} nao possui registros ainda.
                         </div>
                         <section v-else class="list">
                             <div v-for="ins in filteredUserInspections" :key="ins.id" class="inspection">
@@ -145,15 +145,15 @@
                 </div>
 
                 <div class="table-wrap app-table">
-                    <input class="inspection-search" v-model="inspectionSearchQuery" placeholder="Buscar por título..." />
-                    <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhuma inspeção neste filtro.
+                    <input class="inspection-search" v-model="inspectionSearchQuery" placeholder="Buscar por elemento, municipio ou linha..." />
+                    <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhum efluente neste filtro.
                     </div>
-                    <div v-if="loadingApi" class="notice" style="color:blue;">Sincronizando com o banco de dados...
+                    <div v-if="loadingApi" class="notice" >Sincronizando com o sistema central...
                     </div>
 
                     <InspectionList
                         :items="filteredInspections"
-                        title="Listagem de Inspeções"
+                        title="Listagem de Efluentes"
                         id-prefix="adm-ins-"
                         :show-continue="true"
                         :show-send="true"
@@ -163,6 +163,7 @@
                         :on-send="(ins) => confirmAction('send', ins)"
                         :on-details="openDetails"
                         :on-delete="(ins) => confirmAction('delete', ins)"
+                        :on-cancel-pending="cancelPendingSend"
                     />
                 </div>
             </div>
@@ -228,9 +229,10 @@ import { useRouter } from 'vue-router'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
-import { deleteInspectionAPI } from '../services/api'
+import { deleteEfluenteAPI } from '../services/api'
 import { syncInspections } from '../services/sync'
-import { getToken, getCurrentUserId, getInspectionsAPI, getUsuariosAPI, getInspecoesPorUsuarioAPI, criarUsuarioAPI, updateUsuarioAPI, deletarUsuarioAPI } from '../services/api'
+import { extractEfluenteItems, getToken, getAdminUsuarioEfluentesAPI, getMeusEfluentesAPI, getUsuariosAPI, criarUsuarioAPI, updateUsuarioAPI, deletarUsuarioAPI } from '../services/api'
+import { normalizeApiEfluenteListItem, normalizeLocalEfluenteRecord, SYNC_STATUS } from '../services/efluenteModel'
 import QuickGrid from './QuickGrid.vue'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
 import InspectionList from './InspectionList.vue'
@@ -310,25 +312,7 @@ function formatDateForInput(value) {
 }
 
 function normalizeInspection(i) {
-    return {
-        ...i,
-        id: i.id ?? i.Id,
-        title: i.title ?? i.Title ?? i.titulo ?? 'Sem título',
-        location: i.location ?? i.Location,
-        latitude: i.latitude ?? i.Latitude,
-        longitude: i.longitude ?? i.Longitude,
-        address: i.address ?? i.Address,
-        notes: i.notes ?? i.Notes,
-        q1: i.q1 ?? i.Q1,
-        q2: i.q2 ?? i.Q2,
-        q3: i.q3 ?? i.Q3,
-        q4: i.q4 ?? i.Q4,
-        q5: i.q5 ?? i.Q5,
-        q6: i.q6 ?? i.Q6,
-        createdAt: i.createdAt ?? i.CreatedAt,
-        usuarioId: i.usuarioId ?? i.UsuarioId,
-        status: i.status ?? 'Enviado'
-    }
+    return i?.formData ? { ...i, ...i.formData } : normalizeApiEfluenteListItem(i)
 }
 
 function statusLabel(ins) {
@@ -353,8 +337,17 @@ const filteredUserInspections = computed(() => {
     if (!query) return userInspections.value
 
     return userInspections.value.filter(ins => {
-        const title = String(ins.title || ins.titulo || '').toLowerCase()
-        return title.includes(query)
+        const haystack = [
+            ins.title,
+            ins.titulo,
+            ins.txNmElementoMonitoramento,
+            ins.txNrElementoMonitoramento,
+            ins.txMunicipio,
+            ins.txLinhaCptm,
+            ins.txEstacaoCptm
+        ].join(' ').toLowerCase()
+
+        return haystack.includes(query)
     })
 })
 
@@ -369,8 +362,10 @@ async function carregarUsuarios() {
 
         for (const user of workers.value) {
             try {
-                const insp = await getInspecoesPorUsuarioAPI(user.id)
-                const lista = Array.isArray(insp) ? insp : insp?.data ?? []
+                const insp = await getAdminUsuarioEfluentesAPI(user.id, { pageSize: 100 })
+                const lista = extractEfluenteItems(insp)
+                console.log('dados api', insp)
+                console.log('dados exibidos', lista)
                 user.submissions = lista.length
             } catch {
                 user.submissions = 0
@@ -563,14 +558,16 @@ async function seeMore(w) {
     loadingUserInspections.value = true
 
     try {
-        const res = await getInspecoesPorUsuarioAPI(w.id)
-        const arr = Array.isArray(res) ? res : res?.data ?? []
+        const res = await getAdminUsuarioEfluentesAPI(w.id, { pageSize: 100 })
+        const arr = extractEfluenteItems(res)
 
+        console.log('dados api', res)
         userInspections.value = arr.map(normalizeInspection)
+        console.log('dados exibidos', userInspections.value)
         w.submissions = userInspections.value.length
     } catch (err) {
         console.error(err)
-        status.value = 'Erro ao carregar inspeções do usuário.'
+        status.value = 'Erro ao carregar registros do usuario.'
     } finally {
         loadingUserInspections.value = false
     }
@@ -593,6 +590,22 @@ const toastMessage = ref('')
 const toastType = ref('')
 const toastVisible = ref(false)
 
+const adminDashboardStats = computed(() => {
+    const local = inspections.value || []
+    const sent = sentApiData.value || []
+    const mergedIds = new Set([
+        ...local.map(i => String(i.localId || i.id || '')),
+        ...sent.map(i => String(i.pkCdMeioAmbienteCptm || i.serverId || ''))
+    ])
+
+    return {
+        users: workers.value.length,
+        total: mergedIds.size,
+        pending: local.filter(i => String(i.status || '').toLowerCase() !== 'enviado').length,
+        sent: sent.length
+    }
+})
+
 function showToast(msg, type = 'success', duration = 3000) {
     toastMessage.value = msg
     toastType.value = type
@@ -610,26 +623,29 @@ onMounted(async () => {
 
         store.inspections = data.filter(i => i.userEmail === currentUser)
     } catch (err) {
-        console.error("Erro ao carregar inspeções", err)
+        console.error("Erro ao carregar rascunhos locais", err)
     }
 
-    // Carrega do backend e renderiza as duas via 'all'
+    // Carrega do sistema central e renderiza junto com os rascunhos locais.
     await setFilter('all')
 })
 
 const filteredInspections = computed(() => {
     const currentUser = localStorage.getItem('user_email')
-    // Na aba de 'Minhas Inspeções', o Admin vê apenas as que ele mesmo criou
-    const myInspections = inspections.value.filter(i => i.userEmail === currentUser)
+    // Na aba de 'Meus Registros', o Admin ve apenas as que ele mesmo criou.
+    const myInspections = inspections.value
+        .map(normalizeLocalEfluenteRecord)
+        .filter(Boolean)
+        .filter(i => !i.userEmail || i.userEmail === currentUser)
 
     let result = []
 
     if (viewFilter.value === 'sent') result = sentApiData.value
     else if (viewFilter.value === 'all') {
         const merged = [...myInspections]
-        const localIds = new Set(merged.map(i => String(i.id)))
+        const localIds = new Set(merged.map(i => String(i.pkCdMeioAmbienteCptm || i.localId || i.id)))
         for (const s of sentApiData.value) {
-            if (!localIds.has(String(s.id))) {
+            if (!localIds.has(String(s.pkCdMeioAmbienteCptm || s.serverId))) {
                 merged.push(s)
             }
         }
@@ -637,7 +653,7 @@ const filteredInspections = computed(() => {
         result = merged.sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     }
 
-    else if (viewFilter.value === 'scheduled') result = myInspections.filter(i => i.status !== 'Enviado')
+    else if (viewFilter.value === 'scheduled') result = myInspections.filter(i => i.syncStatus !== SYNC_STATUS.SENT)
     else result = myInspections
 
     return applyInspectionSearch(result)
@@ -647,7 +663,18 @@ function applyInspectionSearch(list) {
     const query = inspectionSearchQuery.value.trim().toLowerCase()
     if (!query) return list
 
-    return list.filter(i => String(i.title || i.titulo || '').toLowerCase().includes(query))
+    return list.filter(i => {
+        const haystack = [
+            i.title,
+            i.titulo,
+            i.txNmElementoMonitoramento,
+            i.txNrElementoMonitoramento,
+            i.txMunicipio,
+            i.txLinhaCptm,
+            i.txEstacaoCptm
+        ].join(' ').toLowerCase()
+        return haystack.includes(query)
+    })
 }
 
 async function setFilter(key) {
@@ -655,21 +682,15 @@ async function setFilter(key) {
     if (key === 'sent' || key === 'all') {
         loadingApi.value = true
         try {
-            let res = await getInspectionsAPI()
+            const response = await getMeusEfluentesAPI({ pageSize: 100 })
+            const arr = extractEfluenteItems(response)
 
-            let arr = []
-            if (res && res.data && Array.isArray(res.data)) arr = res.data
-            else if (Array.isArray(res)) arr = res
-
-            // sentApiData.value = arr
-            const currentUserId = getCurrentUserId()
-
-            sentApiData.value = arr
-                .map(normalizeInspection)
-                .filter(i => Number(i.usuarioId) === Number(currentUserId))
+            console.log('dados api', response)
+            sentApiData.value = arr.map(normalizeApiEfluenteListItem)
+            console.log('dados exibidos', sentApiData.value)
         } catch (e) {
-            console.error("Erro API Sent", e)
-            status.value = 'Erro ao buscar inspeções no banco.'
+            console.error("Erro ao carregar registros enviados", e)
+            status.value = 'Erro ao buscar registros enviados.'
         } finally {
             loadingApi.value = false
         }
@@ -681,26 +702,52 @@ function openNewInspection() {
 }
 
 function goToForm(ins) {
-    router.push(`/form/${ins.id}`)
+    const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
+    const id = isLocal
+        ? (ins.localId || ins.id)
+        : (ins.pkCdMeioAmbienteCptm || ins.serverId)
+
+    if (!id) {
+        status.value = 'ID do efluente nao encontrado.'
+        return
+    }
+
+    router.push(`/form/${encodeURIComponent(id)}`)
 }
 
 function goToEditInspection(ins) {
-    router.push(`/edit-inspection/${ins.id}`)
+    const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
+    const id = isLocal
+        ? (ins.localId || ins.id)
+        : (ins.pkCdMeioAmbienteCptm || ins.serverId)
+
+    if (!id) {
+        status.value = 'ID do efluente nao encontrado.'
+        return
+    }
+
+    router.push(`/edit-inspection/${encodeURIComponent(id)}`)
 }
 
 async function sendInspection(ins) {
-    const idx = store.inspections.findIndex(i => i.id === ins.id)
+    const normalized = normalizeLocalEfluenteRecord(ins)
+    if (!normalized) return
+    normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
+    normalized.status = 'Aguardando Envio'
+
     try {
-        ins.status = 'Aguardando Rede'
-        await saveInspection(ins)
-        if (idx >= 0) store.inspections[idx] = { ...ins }
+        const saved = await saveInspection(normalized)
+        const savedId = String(saved.localId || saved.id)
+        const idx = store.inspections.findIndex(i => String(i.localId || i.id) === savedId)
+        if (idx >= 0) store.inspections[idx] = { ...saved }
+        else store.inspections.push(saved)
     } catch (e) {
-        status.value = 'Erro ao salvar localmente. Fica em Aguardando Rede.'
+        status.value = 'Erro ao salvar localmente. Ficara aguardando envio.'
         return
     }
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        status.value = 'Sem conexão. Inspeção ficará em Aguardando Rede.'
+        status.value = 'Sem conexao. O registro ficara aguardando envio.'
         return
     }
 
@@ -713,9 +760,11 @@ async function sendInspection(ins) {
     status.value = 'Sincronizando...'
     try {
         await syncInspections()
-        const exists = store.inspections.find(i => i.id === ins.id)
+        await setFilter(viewFilter.value)
+        const localId = String(normalized.localId || normalized.id)
+        const exists = store.inspections.find(i => String(i.localId || i.id) === localId)
         if (!exists) status.value = 'Sincronizada com sucesso!'
-        else status.value = 'Permanece em Aguardando Rede.'
+        else status.value = 'Permanece aguardando envio.'
     } catch (e) {
         status.value = 'Erro na sincronização.'
     }
@@ -723,37 +772,58 @@ async function sendInspection(ins) {
 
 async function deleteInspection(ins) {
     try {
-        const idStr = String(ins.id)
+        const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
+        const id = isLocal
+            ? (ins.localId || ins.id)
+            : (ins.pkCdMeioAmbienteCptm || ins.serverId)
 
-        const localIdx = store.inspections.findIndex(i => String(i.id) === idStr)
+        if (!id) {
+            showToast('ID do efluente nao encontrado.', 'error')
+            return
+        }
+
+        const idStr = String(id)
+        const localIdx = isLocal
+            ? store.inspections.findIndex(i => String(i.localId || i.id) === idStr)
+            : -1
 
         if (localIdx >= 0) {
-            // local item: remove from IndexedDB and store
             try {
-                await deleteInspectionDB(ins.id)
-                store.inspections = store.inspections.filter(i => String(i.id) !== idStr)
-                showToast('Inspeção apagada localmente.', 'success')
+                await deleteInspectionDB(id)
+                store.inspections = store.inspections.filter(i => String(i.localId || i.id) !== idStr)
+                showToast('Efluente apagado localmente.', 'success')
             } catch (e) {
                 console.error('Erro ao apagar localmente', e)
                 showToast('Erro ao apagar localmente.', 'error')
             }
         } else {
-            // server item: attempt backend delete then remove from sentApiData
             try {
-                await deleteInspectionAPI(idStr)
-                sentApiData.value = sentApiData.value.filter(i => String(i.id) !== idStr)
-                showToast('Inspeção apagada do servidor.', 'success')
+                await deleteEfluenteAPI(idStr)
+                sentApiData.value = sentApiData.value.filter(i => String(i.pkCdMeioAmbienteCptm || i.serverId) !== idStr)
+                showToast('Efluente apagado do servidor.', 'success')
             } catch (e) {
                 console.error('Erro ao apagar no servidor', e)
-                status.value = 'Não foi possível apagar do servidor.'
+                status.value = 'Nao foi possivel apagar do servidor.'
                 showToast('Erro ao apagar no servidor.', 'error')
             }
         }
     } catch (err) {
-        console.error("Erro ao apagar inspeção", err)
+        console.error('Erro ao apagar efluente', err)
     }
 }
 
+async function cancelPendingSend(ins) {
+    const normalized = normalizeLocalEfluenteRecord(ins)
+    if (!normalized) return
+
+    normalized.syncStatus = SYNC_STATUS.DRAFT
+    normalized.status = 'Rascunho'
+    const saved = await saveInspection(normalized)
+    const id = String(saved.localId || saved.id)
+    const idx = store.inspections.findIndex(i => String(i.localId || i.id) === id)
+    if (idx >= 0) store.inspections[idx] = saved
+    showToast('Envio cancelado. Registro voltou para rascunho.', 'success')
+}
 function logout() {
     localStorage.removeItem("auth_token")
     localStorage.removeItem("user_role")
@@ -763,7 +833,7 @@ function logout() {
 }
 
 // ------------------------------------
-// Modal de Confirmação (Minhas Inspeções)
+// Modal de confirmacao (Meus Registros)
 // ------------------------------------
 const modalVisible = ref(false)
 const modalAction = ref('')
@@ -1055,7 +1125,7 @@ function cancelModal() {
     cursor: pointer;
 }
 
-/* Estilos de app comum (Minhas inspeções) */
+/* Estilos de app comum (Meus Registros) */
 .app-controls {
     display: flex;
     flex-direction: column;

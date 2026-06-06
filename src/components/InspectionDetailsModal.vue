@@ -1,368 +1,327 @@
 <template>
-    <div class="modal-overlay" v-if="visible" role="dialog" aria-modal="true" @click.self="close">
-        <div class="modal details-modal">
-            <div class="modal-header">
-                <h3>Inspeção: {{ inspection?.title || inspection?.titulo || 'Sem Título' }}</h3>
-                <button class="close-btn" @click="close">×</button>
-            </div>
-            
-            <div class="modal-content">
-                <div class="info-group">
-                    <p><strong>ID:</strong> {{ inspection?.id }}</p>
-                    <p><strong>Status:</strong> {{ inspection?.status || 'Enviado' }}</p>
-                    <p><strong>Criada em:</strong> {{ formattedDate }}</p>
-                </div>
+  <div class="modal-overlay" v-if="visible" role="dialog" aria-modal="true" @click.self="close">
+    <div class="modal details-modal">
+      <div class="modal-header">
+        <h3>Efluente: {{ title }}</h3>
+        <button class="close-btn" @click="close">x</button>
+      </div>
 
-                <div class="info-group">
-                    <h4>Foto</h4>
-                    <div v-if="photoLoading" class="photo-status">Carregando foto...</div>
-                    <div v-else-if="photoUrl" class="photo-wrap">
-                        <img :src="photoUrl" alt="Foto da inspeção" class="photo-image" />
-                    </div>
-                    <div v-else class="photo-status">Nenhuma foto disponível.</div>
-                </div>
+      <div class="modal-content">
+        <section class="info-group">
+          <h4>Identificacao</h4>
+          <p><strong>ID:</strong> {{ pk || 'Nao informado' }}</p>
+          <p><strong>Elemento:</strong> {{ title }}</p>
+          <p><strong>Status do registro:</strong> {{ inspection?.txStatusDoRegistroNoBd || inspection?.status || 'Nao informado' }}</p>
+          <p><strong>Status desvio:</strong> {{ inspection?.txStatusDoDesvioAmbiental || 'Nao informado' }}</p>
+        </section>
 
-                <div class="info-group">
-                    <h4>Respostas</h4>
-                    <p><strong>Q1:</strong> {{ inspection?.q1 || inspection?.Q1 }}</p>
-                    <p><strong>Q2:</strong> {{ inspection?.q2 || inspection?.Q2 }}</p>
-                    <p><strong>Q3:</strong> {{ inspection?.q3 || inspection?.Q3 }}</p>
-                    <p><strong>Q4:</strong> {{ inspection?.q4 || inspection?.Q4 }}</p>
-                    <p><strong>Q5:</strong> {{ inspection?.q5 || inspection?.Q5 }}</p>
-                    <p><strong>Q6:</strong> {{ inspection?.q6 || inspection?.Q6 }}</p>
-                    <p><strong>Observações:</strong> {{ inspection?.notes || inspection?.Notes || 'Não informado' }}</p>
-                </div>
+        <section class="info-group">
+          <h4>Localizacao</h4>
+          <p><strong>Municipio:</strong> {{ inspection?.txMunicipio || 'Nao informado' }}</p>
+          <p><strong>Linha:</strong> {{ inspection?.txLinhaCptm || 'Nao informado' }}</p>
+          <p><strong>Estacao:</strong> {{ inspection?.txEstacaoCptm || 'Nao informado' }}</p>
+          <p><strong>Trecho/sentido:</strong> {{ inspection?.txTrechoESentidoCptm || 'Nao informado' }}</p>
+          <p><strong>Coordenadas:</strong> {{ displayCoordinates || 'Nao informado' }}</p>
+          <a v-if="googleMapsLink" :href="googleMapsLink" target="_blank" rel="noopener noreferrer" class="btn block-btn">
+            Abrir no mapa
+          </a>
+        </section>
 
-                <div class="info-group">
-                    <h4>Localização</h4>
-                    <p><strong>Endereço:</strong> {{ fetchedAddress || inspection?.address || inspection?.Address || 'Não informado' }}</p>
-                    <p><strong>Coordenadas:</strong> {{ displayCoordinates || 'Não informado' }}</p>
-                    
-                    <div class="map-container" v-if="latLng">
-                        <iframe 
-                            width="100%" 
-                            height="200" 
-                            style="border:0; border-radius: 8px; margin-top: 10px;"
-                            loading="lazy" 
-                            allowfullscreen 
-                            :src="mapUrl">
-                        </iframe>
-                        <a :href="googleMapsLink" target="_blank" rel="noopener noreferrer" class="btn block-btn open-maps-btn">
-                            Abrir no Google Maps
-                        </a>
-                    </div>
-                </div>
-            </div>
+        <section class="info-group">
+          <h4>Efluente</h4>
+          <p><strong>Origem:</strong> {{ inspection?.txOrigemEfluente || 'Nao informado' }}</p>
+          <p><strong>Fonte geradora:</strong> {{ inspection?.txFonteGeradora || 'Nao informado' }}</p>
+          <p><strong>Quantidade (L):</strong> {{ inspection?.nrQuantidadeL ?? 'Nao informado' }}</p>
+          <p><strong>Destinacao:</strong> {{ inspection?.txTipoDestinacao || 'Nao informado' }}</p>
+          <p><strong>Risco CPTM:</strong> {{ inspection?.txOfereceRiscoSistemaCptm || 'Nao informado' }}</p>
+          <p><strong>Observacoes:</strong> {{ inspection?.txObsCadastramento || 'Nao informado' }}</p>
+        </section>
 
-            <div class="modal-actions">
-                <button class="btn cancel" @click="close">Fechar</button>
-            </div>
-        </div>
+        <section class="info-group">
+          <h4>Anexos</h4>
+          <div v-if="attachmentsLoading" class="photo-status">Carregando anexos...</div>
+          <div v-else-if="attachments.length" class="attachments">
+            <article v-for="att in attachments" :key="att.attachmentId" class="attachment">
+              <strong>{{ att.attName || `Anexo ${att.attachmentId}` }}</strong>
+              <span>{{ att.contentType || 'arquivo' }} - {{ formatBytes(att.dataSize) }}</span>
+              <div class="attachment-actions">
+                <button class="btn" @click="previewAttachment(att)">Visualizar</button>
+                <button class="btn" @click="downloadAttachment(att)">Baixar</button>
+              </div>
+            </article>
+          </div>
+          <div v-else class="photo-status">Nenhum anexo disponivel.</div>
+        </section>
+
+        <section v-if="previewUrl" class="info-group">
+          <div class="preview-header">
+            <h4>{{ previewName }}</h4>
+            <button class="btn cancel" @click="clearPreview">Fechar preview</button>
+          </div>
+          <img v-if="previewIsImage" :src="previewUrl" alt="Preview do anexo" class="photo-image" />
+          <a v-else :href="previewUrl" target="_blank" rel="noopener noreferrer">Abrir arquivo</a>
+        </section>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" @click="downloadPdf">Baixar PDF</button>
+        <button class="btn warning" @click="editCurrent">Editar</button>
+        <button class="btn cancel" @click="close">Fechar</button>
+      </div>
     </div>
+  </div>
 </template>
 
 <script setup>
-import { computed, ref, watch, onBeforeUnmount } from 'vue'
-import { getInspectionImageBlobAPI } from '../services/api'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { getEfluenteAnexoBlobAPI, getEfluenteAnexosAPI } from '../services/api'
+import { SYNC_STATUS } from '../services/efluenteModel'
 
 const props = defineProps({
-    visible: {
-        type: Boolean,
-        default: false
-    },
-    inspection: {
-        type: Object,
-        default: () => null
-    }
+  visible: {
+    type: Boolean,
+    default: false
+  },
+  inspection: {
+    type: Object,
+    default: () => null
+  }
 })
 
 const emit = defineEmits(['close'])
+const router = useRouter()
 
-const fetchedAddress = ref('')
-const photoUrl = ref('')
-const photoLoading = ref(false)
-let photoObjectUrl = ''
+const attachments = ref([])
+const attachmentsLoading = ref(false)
+const previewUrl = ref('')
+const previewName = ref('')
+const previewType = ref('')
+let previewObjectUrl = ''
 
-function close() {
-    emit('close')
-}
-
-function clearPhotoUrl() {
-    if (photoObjectUrl) {
-        URL.revokeObjectURL(photoObjectUrl)
-        photoObjectUrl = ''
-    }
-    photoUrl.value = ''
-    photoLoading.value = false
-}
-
-function setPhotoFromBlob(blob) {
-    clearPhotoUrl()
-
-    if (!blob) return
-
-    photoObjectUrl = URL.createObjectURL(blob)
-    photoUrl.value = photoObjectUrl
-}
-
-async function loadInspectionPhoto() {
-    clearPhotoUrl()
-
-    const photo = props.inspection?.photo
-    if (photo instanceof Blob) {
-        setPhotoFromBlob(photo)
-        return
-    }
-
-    const directPhotoUrl = props.inspection?.photoUrl || props.inspection?.PhotoUrl
-    if (typeof directPhotoUrl === 'string' && directPhotoUrl.trim()) {
-        photoUrl.value = directPhotoUrl.trim()
-        return
-    }
-
-    const id = props.inspection?.serverId || props.inspection?.id || props.inspection?.Id
-    if (!id) return
-
-    photoLoading.value = true
-    try {
-        const blob = await getInspectionImageBlobAPI(id)
-        if (blob) setPhotoFromBlob(blob)
-    } catch (err) {
-        const message = String(err?.message || '')
-        if (!message.includes('404')) {
-            console.error('Erro ao carregar foto da inspeção:', err)
-        }
-    } finally {
-        photoLoading.value = false
-    }
-}
-
-// Format the date using Intl.DateTimeFormat
-const formattedDate = computed(() => {
-    const d = props.inspection?.createdAt || props.inspection?.CreatedAt;
-    if (!d) return 'Não informado';
-    
-    try {
-        const dateObj = new Date(d);
-        if (isNaN(dateObj.getTime())) return d;
-        
-        return new Intl.DateTimeFormat('pt-BR', {
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-        }).format(dateObj);
-    } catch {
-        return d;
-    }
-})
-
-// Extract location considering possible properties
-const locationData = computed(() => {
-    return props.inspection?.location || props.inspection?.Location;
-})
-
-const latLng = computed(() => {
-    // If we have direct latitude and longitude properties
-    if (props.inspection?.latitude && props.inspection?.longitude) {
-        return { lat: props.inspection.latitude, lng: props.inspection.longitude }
-    }
-    
-    // Fallback to searching inside location string
-    if (!locationData.value) return null;
-    const parts = locationData.value.split(',');
-    if (parts.length >= 2) {
-        return { lat: parts[0].trim(), lng: parts[1].trim() }
-    }
-    return null;
-})
+const isSentRecord = computed(() => (props.inspection?.syncStatus || SYNC_STATUS.SENT) === SYNC_STATUS.SENT)
+const pk = computed(() => props.inspection?.pkCdMeioAmbienteCptm || props.inspection?.serverId || props.inspection?.id || '')
+const title = computed(() => props.inspection?.txNmElementoMonitoramento || props.inspection?.title || 'Sem nome')
+const lat = computed(() => props.inspection?.nrLatGrauDecimalWgs84 ?? props.inspection?.latitude)
+const lng = computed(() => props.inspection?.nrLongGrauDecimalWgs84 ?? props.inspection?.longitude)
+const previewIsImage = computed(() => previewType.value.startsWith('image/'))
 
 const displayCoordinates = computed(() => {
-    if (latLng.value) {
-        return `${latLng.value.lat}, ${latLng.value.lng}`
-    }
-    return locationData.value || null
-})
-
-const mapUrl = computed(() => {
-    if (!latLng.value) return '';
-    // Use OSM for map preview
-    return `https://www.openstreetmap.org/export/embed.html?bbox=${Number(latLng.value.lng)-0.005},${Number(latLng.value.lat)-0.005},${Number(latLng.value.lng)+0.005},${Number(latLng.value.lat)+0.005}&layer=mapnik&marker=${latLng.value.lat},${latLng.value.lng}`;
+  if (lat.value === null || lat.value === undefined || lng.value === null || lng.value === undefined) return ''
+  return `${lat.value}, ${lng.value}`
 })
 
 const googleMapsLink = computed(() => {
-    if (!latLng.value) return '';
-    return `https://www.google.com/maps/search/?api=1&query=${latLng.value.lat},${latLng.value.lng}`;
+  if (!displayCoordinates.value) return ''
+  return `https://www.google.com/maps/search/?api=1&query=${lat.value},${lng.value}`
 })
 
-async function updateAddressFromCoords() {
-    fetchedAddress.value = ''
-    
-    // Don't overwrite if address is already explicitly provided
-    if (props.inspection?.address || props.inspection?.Address) return;
-    
-    if (latLng.value) {
-        try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latLng.value.lat}&lon=${latLng.value.lng}`)
-            const data = await res.json()
-            if (data && data.display_name) {
-                fetchedAddress.value = data.display_name
-            }
-        } catch (e) {
-            console.error('Erro ao buscar endereço:', e)
-        }
-    }
+function close() {
+  emit('close')
 }
 
-watch(() => props.visible, (newVal) => {
-    if (newVal) {
-        updateAddressFromCoords()
-        loadInspectionPhoto()
-    } else {
-        clearPhotoUrl()
-    }
+function editCurrent() {
+  if (!pk.value) return
+  close()
+  router.push(`/form/${encodeURIComponent(pk.value)}`)
+}
+
+function downloadPdf() {
+  window.print()
+}
+
+function formatBytes(value) {
+  const size = Number(value || 0)
+  if (!size) return '0 B'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+async function loadAttachments() {
+  attachments.value = []
+  if (!isSentRecord.value || !pk.value) {
+    console.log('dados exibidos', { detalhes: props.inspection, anexos: attachments.value })
+    return
+  }
+
+  attachmentsLoading.value = true
+  try {
+    const data = await getEfluenteAnexosAPI(pk.value)
+    console.log('dados api', data)
+    attachments.value = Array.isArray(data) ? data : []
+    console.log('dados exibidos', { detalhes: props.inspection, anexos: attachments.value })
+  } catch (err) {
+    console.error('Erro ao carregar anexos do efluente:', err)
+  } finally {
+    attachmentsLoading.value = false
+  }
+}
+
+function clearPreview() {
+  if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl)
+  previewObjectUrl = ''
+  previewUrl.value = ''
+  previewName.value = ''
+  previewType.value = ''
+}
+
+async function previewAttachment(att) {
+  clearPreview()
+  const blob = await getEfluenteAnexoBlobAPI(att.attachmentId)
+  previewObjectUrl = URL.createObjectURL(blob)
+  previewUrl.value = previewObjectUrl
+  previewName.value = att.attName || `Anexo ${att.attachmentId}`
+  previewType.value = blob.type || att.contentType || ''
+}
+
+async function downloadAttachment(att) {
+  const blob = await getEfluenteAnexoBlobAPI(att.attachmentId)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = att.attName || `anexo-${att.attachmentId}`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+watch(() => props.visible, (visible) => {
+  if (visible) loadAttachments()
+  else clearPreview()
 })
 
 watch(() => props.inspection, () => {
-    if (props.visible) {
-        loadInspectionPhoto()
-    } else {
-        clearPhotoUrl()
-    }
+  if (props.visible) loadAttachments()
 }, { deep: true })
 
-onBeforeUnmount(() => {
-    clearPhotoUrl()
-})
-
+onBeforeUnmount(clearPreview)
 </script>
 
 <style scoped>
 .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-}
-.modal.details-modal {
-    background: #fff;
-    color: #333;
-    border-radius: 12px;
-    padding: 20px;
-    max-width: 500px;
-    width: 90%;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-}
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 10px;
-    margin-bottom: 15px;
-    color: #333;
-}
-.modal-header h3 {
-    margin: 0;
-    color: #222;
-}
-.close-btn {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    line-height: 1;
-    color: #666;
-}
-.modal-content {
-    flex: 1;
-    overflow-y: auto;
-    text-align: left;
-    padding-right: 5px;
-    color: #444;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 16px;
 }
 
-/* Scrollbar fina */
-.modal-content::-webkit-scrollbar {
-    width: 6px;
+.modal.details-modal {
+  background: #fff;
+  color: #333;
+  border-radius: 8px;
+  padding: 20px;
+  width: min(720px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
 }
-.modal-content::-webkit-scrollbar-track {
-    background: #f9f9f9;
-    border-radius: 4px;
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
 }
-.modal-content::-webkit-scrollbar-thumb {
-    background: #d0d0d0;
-    border-radius: 4px;
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #555;
 }
-.modal-content::-webkit-scrollbar-thumb:hover {
-    background: #a0a0a0;
+
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .info-group {
-    margin-bottom: 15px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #efefef;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px;
 }
-.photo-wrap {
-    margin-top: 8px;
-}
-.photo-image {
-    width: 100%;
-    max-height: 260px;
-    object-fit: contain;
-    border-radius: 10px;
-    border: 1px solid #e5e7eb;
-    background: #fafafa;
-}
-.photo-status {
-    color: #6b7280;
-    font-size: 0.95rem;
-}
-.info-group:last-child {
-    border-bottom: none;
-}
+
 .info-group h4 {
-    margin-bottom: 8px;
-    color: #444;
+  margin: 0 0 10px;
+  color: #097a5e;
 }
-.map-container {
-    margin-top: 10px;
+
+.info-group p {
+  margin: 6px 0;
 }
-.open-maps-btn {
-    margin-top: 10px;
-    display: block;
-    text-align: center;
-    width: 100%;
-    box-sizing: border-box;
-    text-decoration: none;
-    background-color: var(--primary-color, #C2185B);
-    color: white;
-    padding: 10px;
-    border-radius: 8px;
+
+.attachments {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
 }
-.modal-actions {
-    margin-top: 15px;
-    display: flex;
-    justify-content: flex-end;
-    border-top: 1px solid #eee;
-    padding-top: 15px;
+
+.attachment {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
+
+.attachment strong,
+.attachment span {
+  overflow-wrap: anywhere;
+}
+
+.attachment-actions,
+.modal-actions,
+.preview-header {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.preview-header {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.photo-image {
+  width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.photo-status {
+  color: #667085;
+}
+
+.btn {
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #344054;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+}
+
 .btn.cancel {
-    background: #ccc;
-    color: #333;
-    padding: 8px 16px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
+  color: #b42318;
+  border-color: #f5b4b4;
+}
+
+.block-btn {
+  display: inline-flex;
+  margin-top: 8px;
 }
 </style>
