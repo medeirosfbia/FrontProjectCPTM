@@ -6,7 +6,7 @@ export const useInspectionStore = defineStore('inspection', {
     }),
     actions: {
         addInspection(inspection) {
-            const newInspection = { ...inspection, id: 'i' + Date.now(), status: 'Não enviada' }
+            const newInspection = { ...inspection, id: 'i' + Date.now(), status: 'Rascunho', syncStatus: 'DRAFT' }
             this.inspections.push(newInspection);
         },
 

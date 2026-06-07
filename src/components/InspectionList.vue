@@ -15,11 +15,11 @@
           <button class="btn-small dots-btn" @click.stop="toggle(ins)">...</button>
           <div class="action-menu" v-if="openFor === uid(ins)">
             <button v-if="showDetails && shouldShowDetails(ins)" class="btn" @click="onDetails && onDetails(ins); close()">{{ detailsLabel(ins) }}</button>
-            <button v-if="showContinue" class="btn" @click="onContinue && onContinue(ins); close()">{{ primaryActionLabel(ins) }}</button>
+            <button v-if="showContinue && shouldShowContinue(ins)" class="btn" @click="onContinue && onContinue(ins); close()">{{ primaryActionLabel(ins) }}</button>
             <button v-if="showSend && shouldShowSend(ins)" class="btn" :style="sendStyle" @click="onSend && onSend(ins); close()">{{ sendLabel(ins) }}</button>
             <button v-if="shouldShowCancelPending(ins)" class="btn" @click="onCancelPending && onCancelPending(ins); close()">Cancelar envio</button>
             <button v-if="isSent(ins)" class="btn" @click="downloadPdf(ins)">Baixar PDF</button>
-            <button v-if="showDelete && (allowDeleteSent || !isSent(ins))" class="btn" :style="deleteStyle" @click="onDelete && onDelete(ins); close()">{{ deleteLabel(ins) }}</button>
+            <button v-if="showDelete && !isPending(ins) && (allowDeleteSent || !isSent(ins))" class="btn" :style="deleteStyle" @click="onDelete && onDelete(ins); close()">{{ deleteLabel(ins) }}</button>
           </div>
         </div>
       </div>
@@ -121,9 +121,12 @@ function statusClass(ins) {
 
 function primaryActionLabel(ins) {
   if (ins?.syncStatus === SYNC_STATUS.DRAFT) return 'Continuar'
-  if (ins?.syncStatus === SYNC_STATUS.PENDING_SYNC) return 'Editar antes de enviar'
   if (ins?.syncStatus === SYNC_STATUS.ERROR) return 'Continuar'
   return 'Editar'
+}
+
+function shouldShowContinue(ins) {
+  return !isPending(ins)
 }
 
 function shouldShowSend(ins) {
@@ -131,12 +134,12 @@ function shouldShowSend(ins) {
 }
 
 function sendLabel(ins) {
-  if (isError(ins)) return 'Tentar enviar novamente'
+  if (isError(ins)) return 'Tentar Novamente'
   return 'Enviar'
 }
 
 function shouldShowCancelPending(ins) {
-  return isPending(ins) && typeof props.onCancelPending === 'function'
+  return false
 }
 
 function shouldShowDetails(ins) {
@@ -148,7 +151,7 @@ function detailsLabel(ins) {
 }
 
 function deleteLabel(ins) {
-  if (isDraft(ins) || isError(ins) || isPending(ins)) return 'Excluir rascunho'
+  if (isDraft(ins) || isError(ins) || isPending(ins)) return 'Excluir'
   return 'Apagar'
 }
 
@@ -236,6 +239,12 @@ function downloadPdf(ins) {
 .status--draft {
   background: #ffe6e6;
   color: #b42318;
+  border-color: #f5b4b4;
+}
+
+.status--error {
+  background: #fde7e9;
+  color: #9f1239;
   border-color: #f5b4b4;
 }
 

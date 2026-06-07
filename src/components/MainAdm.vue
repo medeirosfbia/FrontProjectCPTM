@@ -35,7 +35,7 @@
                 <div class="modal">
                     <h3>{{ modalAction === 'delete' ? 'Confirmar exclusão' : 'Confirmar envio' }}</h3>
                     <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} o registro "{{
-                        modalTarget?.title }}"?</p>
+                        modalTargetTitle }}"?</p>
                     <div class="modal-actions">
                         <button class="btn cancel" @click="cancelModal">Cancelar</button>
                         <button v-if="modalAction == 'delete'" class="btn confirm delete" @click="confirmModal">Sim,
@@ -71,8 +71,8 @@
                         <section v-else class="list">
                             <div v-for="ins in filteredUserInspections" :key="ins.id" class="inspection">
                                 <div class="left">
-                                    <strong class="inspection-title">{{ ins.title }}</strong>
-                                    <div class="mono">ID: {{ ins.id }}</div>
+                                    <strong class="inspection-title">{{ inspectionTitle(ins) }}</strong>
+                                    <div class="meta">{{ inspectionSubtitle(ins) }}</div>
                                 </div>
                                 <div class="right">
                                     <div :class="['status', statusClass(ins)]">{{ statusLabel(ins) }}</div>
@@ -225,20 +225,29 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
 import { deleteEfluenteAPI } from '../services/api'
-import { syncInspections } from '../services/sync'
+import { cleanupSentLocalInspections, queueInspectionForSync, sendInspectionNow } from '../services/sync'
 import { extractEfluenteItems, getToken, getAdminUsuarioEfluentesAPI, getMeusEfluentesAPI, getUsuariosAPI, criarUsuarioAPI, updateUsuarioAPI, deletarUsuarioAPI } from '../services/api'
-import { normalizeApiEfluenteListItem, normalizeLocalEfluenteRecord, SYNC_STATUS } from '../services/efluenteModel'
+import {
+    getEfluenteCardSubtitle,
+    getEfluenteCardTitle,
+    getSyncStatusLabel,
+    getSyncStatusVariant,
+    normalizeApiEfluenteListItem,
+    normalizeLocalEfluenteRecord,
+    SYNC_STATUS
+} from '../services/efluenteModel'
 import QuickGrid from './QuickGrid.vue'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
 import InspectionList from './InspectionList.vue'
 
 // Gerais
 const router = useRouter()
+const route = useRoute()
 const showUserMenu = ref(false)
 const currentTab = ref('users') // 'users' ou 'my-inspections'
 const detailModalVisible = ref(false)
@@ -316,20 +325,19 @@ function normalizeInspection(i) {
 }
 
 function statusLabel(ins) {
-    return ins.status || 'Enviado'
-}
-
-function normalizedStatus(ins) {
-    return String(ins?.status || 'Enviado').trim().toLowerCase()
+    return getSyncStatusLabel(ins?.syncStatus || SYNC_STATUS.SENT)
 }
 
 function statusClass(ins) {
-    const value = normalizedStatus(ins)
+    return getSyncStatusVariant(ins?.syncStatus || SYNC_STATUS.SENT)
+}
 
-    if (value === 'enviado') return 'status--sent'
-    if (value.includes('aguard')) return 'status--waiting'
-    if (value.includes('não enviada') || value.includes('nao enviada') || value.includes('não enviado') || value.includes('nao enviado')) return 'status--draft'
-    return 'status--neutral'
+function inspectionTitle(ins) {
+    return getEfluenteCardTitle(ins)
+}
+
+function inspectionSubtitle(ins) {
+    return getEfluenteCardSubtitle(ins)
 }
 
 const filteredUserInspections = computed(() => {
@@ -340,6 +348,11 @@ const filteredUserInspections = computed(() => {
         const haystack = [
             ins.title,
             ins.titulo,
+            ins.formData?.txNmElementoMonitoramento,
+            ins.formData?.txNrElementoMonitoramento,
+            ins.formData?.txMunicipio,
+            ins.formData?.txLinhaCptm,
+            ins.formData?.txEstacaoCptm,
             ins.txNmElementoMonitoramento,
             ins.txNrElementoMonitoramento,
             ins.txMunicipio,
@@ -601,7 +614,7 @@ const adminDashboardStats = computed(() => {
     return {
         users: workers.value.length,
         total: mergedIds.size,
-        pending: local.filter(i => String(i.status || '').toLowerCase() !== 'enviado').length,
+        pending: local.filter(i => i.syncStatus === SYNC_STATUS.PENDING_SYNC).length,
         sent: sent.length
     }
 })
@@ -613,21 +626,31 @@ function showToast(msg, type = 'success', duration = 3000) {
     setTimeout(() => { toastVisible.value = false }, duration)
 }
 
+function getInitialFilter() {
+    return route.query.filter === 'scheduled' ? 'scheduled' : 'all'
+}
+
 
 onMounted(async () => {
+    if (route.query.tab === 'my-inspections') currentTab.value = 'my-inspections'
     await carregarUsuarios()
 
     try {
+        await cleanupSentLocalInspections()
         const data = await getAllInspections()
         const currentUser = localStorage.getItem('user_email')
 
-        store.inspections = data.filter(i => i.userEmail === currentUser)
+        store.inspections = data
+            .map(normalizeLocalEfluenteRecord)
+            .filter(Boolean)
+            .filter(i => i.syncStatus !== SYNC_STATUS.SENT)
+            .filter(i => !i.userEmail || i.userEmail === currentUser)
     } catch (err) {
         console.error("Erro ao carregar rascunhos locais", err)
     }
 
     // Carrega do sistema central e renderiza junto com os rascunhos locais.
-    await setFilter('all')
+    await setFilter(getInitialFilter())
 })
 
 const filteredInspections = computed(() => {
@@ -667,6 +690,11 @@ function applyInspectionSearch(list) {
         const haystack = [
             i.title,
             i.titulo,
+            i.formData?.txNmElementoMonitoramento,
+            i.formData?.txNrElementoMonitoramento,
+            i.formData?.txMunicipio,
+            i.formData?.txLinhaCptm,
+            i.formData?.txEstacaoCptm,
             i.txNmElementoMonitoramento,
             i.txNrElementoMonitoramento,
             i.txMunicipio,
@@ -702,6 +730,12 @@ function openNewInspection() {
 }
 
 function goToForm(ins) {
+    if (ins?.syncStatus === SYNC_STATUS.PENDING_SYNC) {
+        status.value = 'Registro aguardando envio. Ele sera enviado automaticamente quando a conexao ou o sistema central voltar.'
+        showToast('Registro aguardando envio.', 'warning')
+        return
+    }
+
     const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
     const id = isLocal
         ? (ins.localId || ins.id)
@@ -732,42 +766,72 @@ function goToEditInspection(ins) {
 async function sendInspection(ins) {
     const normalized = normalizeLocalEfluenteRecord(ins)
     if (!normalized) return
-    normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
-    normalized.status = 'Aguardando Envio'
-
-    try {
-        const saved = await saveInspection(normalized)
-        const savedId = String(saved.localId || saved.id)
-        const idx = store.inspections.findIndex(i => String(i.localId || i.id) === savedId)
-        if (idx >= 0) store.inspections[idx] = { ...saved }
-        else store.inspections.push(saved)
-    } catch (e) {
-        status.value = 'Erro ao salvar localmente. Ficara aguardando envio.'
-        return
-    }
+    showToast('Enviando registro...', 'success', 1800)
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        status.value = 'Sem conexao. O registro ficara aguardando envio.'
+        status.value = 'Sem conexao. O registro ficou aguardando envio e sera reenviado automaticamente.'
+        await queueLocalInspectionForRetry(normalized)
+        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
         return
     }
 
     const token = getToken()
     if (!token) {
         status.value = 'Usuário não autenticado. Faça login para sincronizar.'
+        await updateLocalInspectionAfterSend(normalized)
         return
     }
 
     status.value = 'Sincronizando...'
     try {
-        await syncInspections()
-        await setFilter(viewFilter.value)
+        const result = await sendInspectionNow(normalized)
         const localId = String(normalized.localId || normalized.id)
-        const exists = store.inspections.find(i => String(i.localId || i.id) === localId)
-        if (!exists) status.value = 'Sincronizada com sucesso!'
-        else status.value = 'Permanece aguardando envio.'
+        if (result?.syncStatus === SYNC_STATUS.SENT) {
+            store.inspections = store.inspections.filter(i => String(i.localId || i.id) !== localId)
+            await setFilter(viewFilter.value)
+            status.value = 'Sincronizada com sucesso!'
+            showToast('Registro enviado com sucesso.', 'success')
+            return
+        }
+
+        const idx = store.inspections.findIndex(i => String(i.localId || i.id) === localId)
+        if (idx >= 0 && result) store.inspections[idx] = { ...result }
+        else if (result) store.inspections.push(result)
+
+        const waitingNetwork = result?.syncStatus === SYNC_STATUS.PENDING_SYNC
+        status.value = result?.lastError
+            ? `${waitingNetwork ? 'Aguardando envio' : 'Nao foi possivel enviar'}: ${result.lastError}`
+            : waitingNetwork
+                ? 'Aguardando envio. Tentaremos enviar automaticamente quando a conexao ou o sistema central voltar.'
+                : 'Nao foi possivel enviar para o sistema central.'
+        showToast(
+            waitingNetwork ? 'Aguardando envio. Tentaremos automaticamente.' : 'Registro nao enviado.',
+            waitingNetwork ? 'warning' : 'error'
+        )
     } catch (e) {
-        status.value = 'Erro na sincronização.'
+        console.error('Erro ao sincronizar', e)
+        await queueLocalInspectionForRetry(normalized, e?.message || 'Sistema central indisponivel')
+        status.value = 'Sistema central indisponivel. O registro ficou aguardando envio e sera reenviado automaticamente.'
+        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
     }
+}
+
+async function queueLocalInspectionForRetry(record, lastError = '') {
+    const saved = await queueInspectionForSync(record, lastError)
+    const id = String(saved.localId || saved.id)
+    const idx = store.inspections.findIndex(i => String(i.localId || i.id) === id)
+    if (idx >= 0) store.inspections[idx] = { ...saved }
+    else store.inspections.push(saved)
+    return saved
+}
+
+async function updateLocalInspectionAfterSend(record) {
+    const result = await sendInspectionNow(record)
+    const id = String(result.localId || result.id)
+    const idx = store.inspections.findIndex(i => String(i.localId || i.id) === id)
+    if (idx >= 0) store.inspections[idx] = { ...result }
+    else store.inspections.push(result)
+    return result
 }
 
 async function deleteInspection(ins) {
@@ -838,6 +902,7 @@ function logout() {
 const modalVisible = ref(false)
 const modalAction = ref('')
 const modalTarget = ref(null)
+const modalTargetTitle = computed(() => modalTarget.value ? getEfluenteCardTitle(modalTarget.value) : '')
 
 function confirmAction(action, ins) {
     modalAction.value = action
@@ -845,18 +910,21 @@ function confirmAction(action, ins) {
     modalVisible.value = true
 }
 
-function confirmModal() {
+async function confirmModal() {
     if (!modalTarget.value) {
         modalVisible.value = false
         return
     }
 
-    if (modalAction.value === 'send') sendInspection(modalTarget.value)
-    else if (modalAction.value === 'delete') deleteInspection(modalTarget.value)
+    const action = modalAction.value
+    const target = modalTarget.value
 
     modalVisible.value = false
     modalTarget.value = null
     modalAction.value = ''
+
+    if (action === 'send') await sendInspection(target)
+    else if (action === 'delete') await deleteInspection(target)
 }
 
 function cancelModal() {
@@ -917,6 +985,7 @@ function cancelModal() {
     box-shadow: 0 6px 18px rgba(16,24,40,0.12);
 }
 .toast.success { background: #16a34a }
+.toast.warning { background: #ca8a04 }
 .toast.error { background: #ef4444 }
 
 .header-left {
@@ -1246,6 +1315,12 @@ function cancelModal() {
     color: #111;
 }
 
+.inspection .meta {
+    color: #4b5563;
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+}
+
 .inspection .mono {
     font-size: 0.85rem;
     color: #666;
@@ -1283,6 +1358,12 @@ function cancelModal() {
 .inspection .status--draft {
     background: #ffe6e6;
     color: #b42318;
+    border-color: #f5b4b4;
+}
+
+.inspection .status--error {
+    background: #fde7e9;
+    color: #9f1239;
     border-color: #f5b4b4;
 }
 

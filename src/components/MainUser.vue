@@ -22,7 +22,7 @@
                 <div class="modal">
                     <h3>{{ modalAction === 'delete' ? 'Confirmar exclusão' : 'Confirmar envio' }}</h3>
                     <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} o registro "{{
-                        modalTarget?.title }}"?</p>
+                        modalTargetTitle }}"?</p>
                     <div class="modal-actions">
                         <button class="btn cancel" @click="cancelModal">Cancelar</button>
                         <button v-if="modalAction == 'delete'" class="btn confirm delete" @click="confirmModal">Sim,
@@ -79,12 +79,12 @@
 import { ref, computed } from 'vue'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { onMounted } from 'vue'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
-import { syncInspections } from '../services/sync'
+import { cleanupSentLocalInspections, queueInspectionForSync, sendInspectionNow } from '../services/sync'
 import { deleteEfluenteAPI, extractEfluenteItems, getToken, getMeusEfluentesAPI } from '../services/api'
-import { normalizeApiEfluenteListItem, normalizeLocalEfluenteRecord, SYNC_STATUS } from '../services/efluenteModel'
+import { getEfluenteCardTitle, normalizeApiEfluenteListItem, normalizeLocalEfluenteRecord, SYNC_STATUS } from '../services/efluenteModel'
 import { Plus, Calendar, Send, ClipboardList, LogOut, User } from 'lucide-vue-next'
 import QuickGrid from './QuickGrid.vue'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
@@ -92,12 +92,14 @@ import InspectionList from './InspectionList.vue'
 
 onMounted(async () => {
     try {
+        await cleanupSentLocalInspections()
         const data = await getAllInspections()
         const currentUser = localStorage.getItem('user_email')
 
         const minhasInspecoes = data
             .map(normalizeLocalEfluenteRecord)
             .filter(Boolean)
+            .filter(i => i.syncStatus !== SYNC_STATUS.SENT)
             .filter(i => !i.userEmail || i.userEmail === currentUser)
 
         store.inspections = minhasInspecoes
@@ -107,7 +109,7 @@ onMounted(async () => {
     }
 
     // Carrega do sistema central e renderiza junto com os rascunhos locais.
-    await setFilter('all')
+    await setFilter(getInitialFilter())
 })
 
 
@@ -117,6 +119,7 @@ const newTitle = ref('')
 const showUserMenu = ref(false)
 const viewFilter = ref('all')
 const router = useRouter()
+const route = useRoute()
 const sentApiData = ref([])
 const loadingApi = ref(false)
 
@@ -152,7 +155,8 @@ async function createInspection(returnObj = false) {
     const ins = {
         id: 'i' + Date.now(),
         title,
-        status: 'Não enviada',
+        status: 'Rascunho',
+        syncStatus: SYNC_STATUS.DRAFT,
         userEmail: localStorage.getItem('user_email') || ''
     }
 
@@ -187,27 +191,20 @@ function showToast(msg, type = 'success', duration = 3000) {
     }, duration)
 }
 
+function getInitialFilter() {
+    return route.query.filter === 'scheduled' ? 'scheduled' : 'all'
+}
+
 async function sendInspection(ins) {
     const normalized = normalizeLocalEfluenteRecord(ins)
     if (!normalized) return
-    normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
-    normalized.status = 'Aguardando Envio'
-
-    try {
-        const saved = await saveInspection(normalized)
-        const savedId = String(saved.localId || saved.id)
-        const idx = store.inspections.findIndex(i => String(i.localId || i.id) === savedId)
-        if (idx >= 0) store.inspections[idx] = { ...saved }
-        else store.inspections.push(saved)
-    } catch (e) {
-        console.error('Erro ao persistir localmente', e)
-        status.value = 'Erro ao salvar localmente. Ficara aguardando envio.'
-        return
-    }
+    showToast('Enviando registro...', 'success', 1800)
 
     // if offline, notify and return
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        status.value = 'Sem conexao. O registro ficara aguardando envio.'
+        status.value = 'Sem conexao. O registro ficou aguardando envio e sera reenviado automaticamente.'
+        await queueLocalInspectionForRetry(normalized)
+        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
         return
     }
 
@@ -215,26 +212,62 @@ async function sendInspection(ins) {
     const token = getToken()
     if (!token) {
         status.value = 'Usuário não autenticado. Faça login para sincronizar.'
+        await updateLocalInspectionAfterSend(normalized)
         return
     }
 
     // attempt sync
     status.value = 'Sincronizando com o sistema central...'
     try {
-        await syncInspections()
-        await setFilter(viewFilter.value)
+        const result = await sendInspectionNow(normalized)
 
         const localId = String(normalized.localId || normalized.id)
-        const exists = store.inspections.find(i => String(i.localId || i.id) === localId)
-        if (!exists) {
+        if (result?.syncStatus === SYNC_STATUS.SENT) {
+            store.inspections = store.inspections.filter(i => String(i.localId || i.id) !== localId)
+            await setFilter(viewFilter.value)
             status.value = 'Registro enviado com sucesso.'
-        } else {
-            status.value = 'Erro ao enviar para o sistema central. O registro foi mantido para tentar mais tarde.'
+            showToast('Registro enviado com sucesso.', 'success')
+            return
         }
+
+        const idx = store.inspections.findIndex(i => String(i.localId || i.id) === localId)
+        if (idx >= 0 && result) store.inspections[idx] = { ...result }
+        else if (result) store.inspections.push(result)
+
+        const waitingNetwork = result?.syncStatus === SYNC_STATUS.PENDING_SYNC
+        status.value = result?.lastError
+            ? `${waitingNetwork ? 'Aguardando envio' : 'Nao foi possivel enviar'}: ${result.lastError}`
+            : waitingNetwork
+                ? 'Aguardando envio. Tentaremos enviar automaticamente quando a conexao ou o sistema central voltar.'
+                : 'Nao foi possivel enviar para o sistema central.'
+        showToast(
+            waitingNetwork ? 'Aguardando envio. Tentaremos automaticamente.' : 'Registro nao enviado.',
+            waitingNetwork ? 'warning' : 'error'
+        )
     } catch (e) {
         console.error('Erro ao sincronizar', e)
-        status.value = 'Erro: a conexao com o sistema central falhou. Tentaremos automaticamente.'
+        await queueLocalInspectionForRetry(normalized, e?.message || 'Sistema central indisponivel')
+        status.value = 'Sistema central indisponivel. O registro ficou aguardando envio e sera reenviado automaticamente.'
+        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
     }
+}
+
+async function queueLocalInspectionForRetry(record, lastError = '') {
+    const saved = await queueInspectionForSync(record, lastError)
+    const id = String(saved.localId || saved.id)
+    const idx = store.inspections.findIndex(i => String(i.localId || i.id) === id)
+    if (idx >= 0) store.inspections[idx] = { ...saved }
+    else store.inspections.push(saved)
+    return saved
+}
+
+async function updateLocalInspectionAfterSend(record) {
+    const result = await sendInspectionNow(record)
+    const id = String(result.localId || result.id)
+    const idx = store.inspections.findIndex(i => String(i.localId || i.id) === id)
+    if (idx >= 0) store.inspections[idx] = { ...result }
+    else store.inspections.push(result)
+    return result
 }
 
 async function cancelPendingSend(ins) {
@@ -251,6 +284,12 @@ async function cancelPendingSend(ins) {
 }
 
 function goToForm(ins) {
+    if (ins?.syncStatus === SYNC_STATUS.PENDING_SYNC) {
+        status.value = 'Registro aguardando envio. Ele sera enviado automaticamente quando a conexao ou o sistema central voltar.'
+        showToast('Registro aguardando envio.', 'warning')
+        return
+    }
+
     const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
     const id = isLocal
         ? (ins.localId || ins.id)
@@ -329,7 +368,7 @@ const dashboardStats = computed(() => {
     const local = inspections.value || []
     const sent = sentApiData.value || []
     const mergedIds = new Set([
-        ...local.map(i => String(i.localId || i.id || '')),
+        ...local.map(i => String(i.pkCdMeioAmbienteCptm || i.localId || i.id || '')),
         ...sent.map(i => String(i.pkCdMeioAmbienteCptm || i.serverId || ''))
     ])
     const pending = local.filter(i => i.syncStatus === SYNC_STATUS.PENDING_SYNC).length
@@ -390,6 +429,7 @@ const filteredInspections = computed(() => {
 const modalVisible = ref(false)
 const modalAction = ref('')
 const modalTarget = ref(null)
+const modalTargetTitle = computed(() => modalTarget.value ? getEfluenteCardTitle(modalTarget.value) : '')
 
 function confirmAction(action, ins) {
     modalAction.value = action
@@ -397,21 +437,23 @@ function confirmAction(action, ins) {
     modalVisible.value = true
 }
 
-function confirmModal() {
+async function confirmModal() {
     if (!modalTarget.value) {
         modalVisible.value = false
         return
     }
 
-    if (modalAction.value === 'send') {
-        sendInspection(modalTarget.value)
-    } else if (modalAction.value === 'delete') {
-        deleteInspection(modalTarget.value)
-    }
-
+    const action = modalAction.value
+    const target = modalTarget.value
     modalVisible.value = false
     modalTarget.value = null
     modalAction.value = ''
+
+    if (action === 'send') {
+        await sendInspection(target)
+    } else if (action === 'delete') {
+        await deleteInspection(target)
+    }
 }
 
 function cancelModal() {
@@ -488,6 +530,7 @@ function cancelModal() {
     box-shadow: 0 6px 18px rgba(16,24,40,0.12);
 }
 .toast.success { background: #16a34a }
+.toast.warning { background: #ca8a04 }
 .toast.error { background: #ef4444 }
 
 .sync-message {

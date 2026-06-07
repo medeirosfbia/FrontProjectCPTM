@@ -13,7 +13,7 @@
       aria-label="Rascunhos locais"
     >
       <Calendar :size="28" />
-      <div class="label">Rascunhos</div>
+      <div class="label">Rascunhos Locais</div>
     </button>
 
     <button

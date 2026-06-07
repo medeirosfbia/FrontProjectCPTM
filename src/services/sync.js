@@ -6,6 +6,7 @@ import {
     createEfluenteMultipartAPI,
     getInspectionsAPI,
     getToken,
+    isRetryableApiError,
     updateEfluenteAPI,
     updateEfluenteMultipartAPI
 } from './api'
@@ -19,24 +20,41 @@ import {
 } from './efluenteModel'
 
 let syncing = false
+let syncInitialized = false
+let syncTimerId = null
 
 export const syncState = ref('')
+
+export async function queueInspectionForSync(record, lastError = '') {
+    const normalized = normalizeLocalEfluenteRecord(record)
+    if (!normalized) return record
+
+    normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
+    normalized.status = 'Aguardando Envio'
+    normalized.lastError = lastError
+    return saveInspection(normalized)
+}
 
 export async function sendInspectionNow(record) {
     const normalized = normalizeLocalEfluenteRecord(record)
     if (!normalized) return record
 
-    if (normalized.syncStatus === SYNC_STATUS.DRAFT) return normalized
+    if (normalized.syncStatus === SYNC_STATUS.SENT) return normalized
+
+    normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
+    normalized.status = 'Aguardando Envio'
+    normalized.lastError = ''
+    await saveInspection(normalized)
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
+        normalized.lastError = 'Sem conexao. O registro ficara aguardando envio e sera reenviado automaticamente.'
         await saveInspection(normalized)
         return normalized
     }
 
     const token = getToken()
     if (!token) {
-        normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
+        normalized.lastError = 'Usuario nao autenticado. Faca login para sincronizar.'
         await saveInspection(normalized)
         return normalized
     }
@@ -94,11 +112,32 @@ export async function sendInspectionNow(record) {
             syncStatus: SYNC_STATUS.SENT
         }
     } catch (err) {
-        normalized.syncStatus = SYNC_STATUS.ERROR
+        normalized.syncStatus = isRetryableApiError(err)
+            ? SYNC_STATUS.PENDING_SYNC
+            : SYNC_STATUS.ERROR
         normalized.lastError = err?.message || 'Erro ao sincronizar'
         await saveInspection(normalized)
         return normalized
     }
+}
+
+export async function cleanupSentLocalInspections() {
+    const all = await getAllInspections()
+    let deletedCount = 0
+
+    for (const record of all || []) {
+        const normalized = normalizeLocalEfluenteRecord(record)
+        const legacyStatus = String(record?.status || '').trim().toLowerCase()
+        const shouldDelete = normalized?.syncStatus === SYNC_STATUS.SENT
+            || legacyStatus === 'enviado'
+
+        if (!shouldDelete) continue
+
+        await deleteInspection(record.localId || record.id)
+        deletedCount++
+    }
+
+    return deletedCount
 }
 
 export async function syncInspections() {
@@ -108,7 +147,7 @@ export async function syncInspections() {
 
     try {
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
-            syncState.value = 'Offline'
+            syncState.value = 'Aguardando envio'
             return
         }
 
@@ -125,7 +164,11 @@ export async function syncInspections() {
             if (result?.syncStatus === SYNC_STATUS.SENT) sentCount++
         }
 
-        const refreshedLocal = (await getAllInspections()).map(normalizeLocalEfluenteRecord).filter(Boolean)
+        await cleanupSentLocalInspections()
+
+        const refreshedLocal = (await getAllInspections())
+            .map(normalizeLocalEfluenteRecord)
+            .filter(item => item && item.syncStatus !== SYNC_STATUS.SENT)
         store.inspections = refreshedLocal
 
         try {
@@ -133,7 +176,7 @@ export async function syncInspections() {
             if (token) {
                 const serverItems = await getInspectionsAPI()
                 if (Array.isArray(serverItems)) {
-                    const localIds = new Set(store.inspections.map(item => String(item.localId || item.id)))
+                    const localIds = new Set(store.inspections.map(item => String(item.pkCdMeioAmbienteCptm || item.localId || item.id)))
                     for (const item of serverItems.map(normalizeApiEfluenteListItem)) {
                         if (!localIds.has(String(item.pkCdMeioAmbienteCptm || item.id))) {
                             store.inspections.push(item)
@@ -145,22 +188,34 @@ export async function syncInspections() {
             // Server refresh is best effort.
         }
 
+        if (sentCount > 0 && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('inspections-synced', { detail: { count: sentCount } }))
+        }
+
         syncState.value = sentCount
             ? `${sentCount} efluente(s) sincronizado(s)`
             : 'Sincronizacao concluida'
     } catch (err) {
         console.error('Erro na sincronizacao', err)
-        syncState.value = 'Erro na sincronizacao'
+        syncState.value = 'Aguardando envio'
     } finally {
         syncing = false
     }
 }
 
 export function initSync() {
+    if (syncInitialized) return
+    syncInitialized = true
+
+    async function syncPending() {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) return
+        if (!getToken()) return
+        await syncInspections()
+    }
+
     try {
-        window.addEventListener('online', () => {
-            if (navigator.onLine && getToken()) syncInspections()
-        })
+        window.addEventListener('online', syncPending)
+        syncTimerId = window.setInterval(syncPending, 5000)
     } catch {
         // ignore non-browser env
     }

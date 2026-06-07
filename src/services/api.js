@@ -117,7 +117,9 @@ export async function apiFetch(path, options = {}) {
 
   if (res.status === 401) {
     logout()
-    throw new Error('Unauthorized')
+    const err = new Error('Unauthorized')
+    err.status = 401
+    throw err
   }
 
   const text = await res.text()
@@ -126,6 +128,7 @@ export async function apiFetch(path, options = {}) {
 
   if (!res.ok) {
     const err = new Error(data && data.message ? data.message : `HTTP ${res.status}`)
+    err.status = res.status
     err.response = data
     throw err
   }
@@ -298,7 +301,9 @@ async function sendEfluenteMultipart(path, method, payload, files = []) {
 
   if (res.status === 401) {
     logout()
-    throw new Error('Unauthorized')
+    const err = new Error('Unauthorized')
+    err.status = 401
+    throw err
   }
 
   const text = await res.text()
@@ -307,6 +312,7 @@ async function sendEfluenteMultipart(path, method, payload, files = []) {
 
   if (!res.ok) {
     const err = new Error(data && data.message ? data.message : `HTTP ${res.status}`)
+    err.status = res.status
     err.response = data
     throw err
   }
@@ -316,6 +322,27 @@ async function sendEfluenteMultipart(path, method, payload, files = []) {
 
 export async function createEfluenteMultipartAPI(data, files = []) {
   return sendEfluenteMultipart('/efluentes', 'POST', data, files)
+}
+
+export function isRetryableApiError(err) {
+  const status = Number(err?.status || err?.response?.status || 0)
+  if (status) {
+    return status === 401 || status === 408 || status === 429 || status >= 500
+  }
+
+  const name = String(err?.name || '').toLowerCase()
+  const message = String(err?.message || err || '').toLowerCase()
+
+  return name === 'typeerror'
+    || message.includes('failed to fetch')
+    || message.includes('network')
+    || message.includes('load failed')
+    || message.includes('timeout')
+    || message.includes('inacess')
+    || message.includes('offline')
+    || message.includes('unauthorized')
+    || message.includes('nao autenticado')
+    || message.includes('não autenticado')
 }
 
 export async function updateEfluenteMultipartAPI(pk, data, files = []) {

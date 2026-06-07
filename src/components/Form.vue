@@ -114,10 +114,15 @@
                 <span>{{ documentFiles.length }} documentos</span>
               </div>
               <div class="upload-actions">
-                <label class="upload-drop">
-                  <input type="file" accept="image/*" capture="environment" @change="onFilesSelected" hidden />
-                  <strong>Tirar foto</strong>
-                </label>
+                <button
+                  type="button"
+                  class="upload-drop"
+                  :class="{ active: isCameraOpen }"
+                  :disabled="isCameraStarting"
+                  @click="openCamera"
+                >
+                  <strong>{{ isCameraStarting ? 'Abrindo camera...' : isCameraOpen ? 'Camera aberta' : 'Tirar foto' }}</strong>
+                </button>
                 <label class="upload-drop">
                   <input type="file" accept="image/*" multiple @change="onFilesSelected" hidden />
                   <strong>Selecionar da galeria</strong>
@@ -126,6 +131,18 @@
                   <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain" multiple @change="onFilesSelected" hidden />
                   <strong>Selecionar documento</strong>
                 </label>
+              </div>
+            </div>
+
+            <div v-if="isCameraOpen" class="camera-panel">
+              <div class="camera-preview">
+                <video ref="cameraVideoRef" autoplay playsinline muted></video>
+              </div>
+              <div class="camera-actions">
+                <button type="button" class="btn-primary" :disabled="isCameraCapturing" @click="captureCameraPhoto">
+                  {{ isCameraCapturing ? 'Salvando...' : 'Capturar e salvar' }}
+                </button>
+                <button type="button" class="btn ghost" @click="closeCamera">Fechar camera</button>
               </div>
             </div>
 
@@ -199,7 +216,25 @@
 
           <footer class="wizard-actions">
             <button type="button" class="btn" :disabled="currentStep === 0" @click="prevStep">Voltar</button>
-            <button type="button" class="btn warning" @click="saveDraft">Salvar rascunho</button>
+            <button type="button" class="btn warning" :disabled="saving" @click="saveDraftAndReturnToDrafts">Salvar rascunho</button>
+            <button
+              v-if="!isEditMode"
+              type="button"
+              class="btn info"
+              :disabled="copyLastInspectionBusy"
+              @click="applyLatestInspectionData"
+            >
+              {{ copyLastInspectionBusy ? 'Buscando...' : 'Preencher com ultima inspecao' }}
+            </button>
+            <button
+              v-if="!isEditMode"
+              type="button"
+              class="btn info"
+              :disabled="copyFirstInspectionBusy"
+              @click="applyFirstInspectionData"
+            >
+              {{ copyFirstInspectionBusy ? 'Buscando...' : 'Preencher com primeira inspecao' }}
+            </button>
             <button v-if="!isLastStep" type="button" class="btn-primary" @click="nextStep">Proximo</button>
             <button v-else type="submit" class="btn-primary" :disabled="saving">
               {{ saving ? 'Enviando...' : 'Enviar' }}
@@ -241,10 +276,14 @@ import { deleteInspection, getAllInspections, saveInspection } from '../services
 import {
   createEfluenteAPI,
   createEfluenteMultipartAPI,
+  extractEfluenteItems,
+  getAdminEfluentesAPI,
   getEfluenteAnexoBlobAPI,
   getEfluenteAnexosAPI,
   getEfluenteByPkAPI,
   getIsAdmin,
+  getMeusEfluentesAPI,
+  isRetryableApiError,
   updateEfluenteAPI,
   updateEfluenteMultipartAPI
 } from '../services/api'
@@ -254,7 +293,9 @@ import {
   createAttachmentRecord,
   createDraftRecord,
   createEmptyEfluenteFormData,
+  EFLUENTE_FIELD_KEYS,
   getDraftAttachmentRecords,
+  normalizeApiEfluenteListItem,
   mapApiEfluenteToFormData,
   normalizeLocalEfluenteRecord,
   splitAttachmentRecords,
@@ -280,15 +321,44 @@ const statusType = ref('info')
 const selectedFiles = ref([])
 const selectedPreviewUrls = ref([])
 const isDraggingFiles = ref(false)
+const copyLastInspectionBusy = ref(false)
+const copyFirstInspectionBusy = ref(false)
+const isCameraOpen = ref(false)
+const isCameraStarting = ref(false)
+const isCameraCapturing = ref(false)
+const cameraVideoRef = ref(null)
 const existingAttachments = ref([])
 const attachmentPreviewUrl = ref('')
 const attachmentPreviewName = ref('')
 const attachmentPreviewType = ref('')
 let attachmentObjectUrl = ''
+let cameraStream = null
 let mapRef = null
 let mapMarker = null
 let personMarker = null
 let hasRequestedInitialLocation = false
+
+const FIXED_FIELDS_FROM_LAST_INSPECTION = [
+  'txMunicipio',
+  'txLinhaCptm',
+  'txViaCptm',
+  'txTrechoESentidoCptm',
+  'txEstacaoCptm',
+  'nrLatGrauDecimalWgs84',
+  'nrLongGrauDecimalWgs84',
+  'nrLatMetrosSirgas2000',
+  'nrLongMetrosSirgas2000',
+  'txNmResponsavelCadastro',
+  'txRpResponsavelCadastro',
+  'txDrtResponsavelCadastro',
+  'txNomePjDaContratada',
+  'txNrContratoContratada',
+  'txNomePjDaSupervisora',
+  'txNrContratoSupervisora',
+  'txNmAreaGestoraCptm',
+  'txIdAreaGestoraCptm',
+  'txSiglaAreaGestoraCptm'
+]
 
 const emptyForm = createEmptyEfluenteFormData()
 const form = reactive(createEmptyEfluenteFormData())
@@ -400,6 +470,7 @@ const steps = [
 
 const activeStep = computed(() => steps[currentStep.value])
 const isLastStep = computed(() => currentStep.value === steps.length - 1)
+const isAdminUser = computed(() => getIsAdmin())
 const progressPercent = computed(() => Math.round(((currentStep.value + 1) / steps.length) * 100))
 const stepErrors = computed(() => steps.map((_, index) => getStepError(index)))
 const compactIndexes = computed(() => {
@@ -426,6 +497,7 @@ const reviewGroups = computed(() => [
 ])
 
 watch(currentStep, async () => {
+  if (activeStep.value.kind !== 'attachments') closeCamera({ silent: true })
   if (activeStep.value.kind === 'location') {
     await nextTick()
     initMap()
@@ -433,7 +505,6 @@ watch(currentStep, async () => {
 })
 
 onMounted(async () => {
-  setTodayDefaults()
   if (isEditMode.value) {
     await loadEfluente()
     await loadAttachments()
@@ -442,6 +513,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  closeCamera({ silent: true })
   clearAttachmentPreview()
   clearSelectedPreviewUrls()
   if (mapRef) mapRef.remove()
@@ -457,10 +529,235 @@ function setStatus(message, type = 'info') {
   statusType.value = type
 }
 
-function setTodayDefaults() {
-  const today = new Date().toISOString().slice(0, 10)
-  if (!form.dtDataEmissaoFormulario) form.dtDataEmissaoFormulario = today
-  if (!form.dtDataDoCadastramento) form.dtDataDoCadastramento = today
+async function applyLatestInspectionData() {
+  if (isEditMode.value) return
+
+  if (!getCurrentMonitoredElementKeys().length) {
+    setStatus('Informe o elemento monitorado antes de preencher pela ultima inspecao.', 'warning')
+    return
+  }
+
+  if (copyLastInspectionBusy.value) return
+  copyLastInspectionBusy.value = true
+  setStatus('Buscando ultima inspecao do elemento...', 'info')
+
+  try {
+    const latest = await findLatestInspectionForCurrentElement()
+
+    if (!latest) {
+      setStatus('Nenhuma inspecao anterior encontrada para este elemento.', 'warning')
+      return
+    }
+
+    const sourceData = await hydrateInspectionDataForCopy(latest)
+    copyFixedFieldsFromLatestInspection(sourceData)
+    updateMapFromInputs()
+
+    setStatus('Dados fixos copiados da ultima inspecao.', 'success')
+  } catch (err) {
+    console.error('Erro ao copiar dados da ultima inspecao', err)
+    setStatus(err?.message || 'Nao foi possivel copiar os dados da ultima inspecao.', 'error')
+  } finally {
+    copyLastInspectionBusy.value = false
+  }
+}
+
+async function applyFirstInspectionData() {
+  if (isEditMode.value) return
+  if (copyFirstInspectionBusy.value) return
+
+  copyFirstInspectionBusy.value = true
+  setStatus('Buscando primeira inspecao...', 'info')
+
+  try {
+    const first = await findFirstInspectionForTemplate()
+    if (!first) {
+      setStatus('Nenhuma inspecao anterior encontrada para usar como modelo.', 'warning')
+      return
+    }
+
+    const sourceData = await hydrateInspectionDataForCopy(first)
+    copyFormFieldsFromFirstInspection(sourceData)
+    updateMapFromInputs()
+    setStatus('Dados da primeira inspecao copiados para o formulario.', 'success')
+  } catch (err) {
+    console.error('Erro ao copiar dados da primeira inspecao', err)
+    setStatus(err?.message || 'Nao foi possivel copiar os dados da primeira inspecao.', 'error')
+  } finally {
+    copyFirstInspectionBusy.value = false
+  }
+}
+
+async function findLatestInspectionForCurrentElement() {
+  const targetKeys = getCurrentMonitoredElementKeys()
+  if (!targetKeys.length) return null
+
+  const candidates = await getInspectionCopyCandidates()
+  const sameElementCandidates = candidates.filter(item => isSameMonitoredElement(item, targetKeys))
+
+  if (!sameElementCandidates.length) return null
+
+  return sameElementCandidates
+    .sort((a, b) => getInspectionRecencyTime(b) - getInspectionRecencyTime(a))
+    [0]
+}
+
+async function findFirstInspectionForTemplate() {
+  const candidates = await getInspectionCopyCandidates()
+  if (!candidates.length) return null
+
+  return candidates
+    .sort((a, b) => getInspectionTemplateTime(a) - getInspectionTemplateTime(b))
+    [0]
+}
+
+async function getInspectionCopyCandidates() {
+  const candidates = []
+
+  try {
+    const localRecords = await getAllInspections()
+    candidates.push(
+      ...(localRecords || [])
+        .map(normalizeLocalEfluenteRecord)
+        .filter(Boolean)
+        .filter(item => !isCurrentInspectionRecord(item))
+    )
+  } catch (err) {
+    console.error('Erro ao buscar inspecoes locais para copia', err)
+  }
+
+  try {
+    candidates.push(
+      ...(await getApiInspectionsForCopy())
+        .filter(Boolean)
+        .filter(item => !isCurrentInspectionRecord(item))
+    )
+  } catch (err) {
+    console.error('Erro ao buscar inspecoes da API para copia', err)
+  }
+
+  return candidates
+}
+
+async function getApiInspectionsForCopy() {
+  const listFns = isAdminUser.value
+    ? [getAdminEfluentesAPI, getMeusEfluentesAPI]
+    : [getMeusEfluentesAPI]
+
+  let lastError = null
+
+  for (const listFn of listFns) {
+    try {
+      const response = await listFn({ pageSize: 100 })
+      return extractEfluenteItems(response).map(normalizeApiEfluenteListItem)
+    } catch (err) {
+      lastError = err
+    }
+  }
+
+  throw lastError || new Error('Nao foi possivel buscar inspecoes da API.')
+}
+
+async function hydrateInspectionDataForCopy(item) {
+  const pk = getInspectionPk(item)
+  const isLocalDraft = item?.syncStatus && item.syncStatus !== SYNC_STATUS.SENT
+
+  if (pk && !isLocalDraft) {
+    try {
+      return mapApiEfluenteToFormData(await getEfluenteByPkAPI(pk))
+    } catch (err) {
+      console.error('Erro ao detalhar ultima inspecao para copia', err)
+    }
+  }
+
+  return mapApiEfluenteToFormData(item?.formData || item || {})
+}
+
+function copyFixedFieldsFromLatestInspection(sourceData = {}) {
+  for (const key of FIXED_FIELDS_FROM_LAST_INSPECTION) {
+    form[key] = sourceData[key] ?? ''
+  }
+}
+
+function copyFormFieldsFromFirstInspection(sourceData = {}) {
+  for (const key of EFLUENTE_FIELD_KEYS) {
+    if (key === 'pkCdMeioAmbienteCptm') continue
+    form[key] = sourceData[key] ?? ''
+  }
+  form.pkCdMeioAmbienteCptm = ''
+}
+
+function getCurrentMonitoredElementKeys() {
+  return getMonitoredElementKeys(form)
+}
+
+function getMonitoredElementKeys(source = {}) {
+  return [
+    normalizeElementReference(source?.txNrElementoMonitoramento),
+    normalizeElementReference(source?.txNmElementoMonitoramento)
+  ].filter(Boolean)
+}
+
+function normalizeElementReference(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+}
+
+function isSameMonitoredElement(item, targetKeys = []) {
+  const source = item?.formData || item || {}
+  const itemKeys = getMonitoredElementKeys(source)
+  return itemKeys.some(key => targetKeys.includes(key))
+}
+
+function isCurrentInspectionRecord(item) {
+  const currentIds = [
+    localDraftId.value,
+    route.params.id
+  ].map(value => String(value || '')).filter(value => value && value !== 'new')
+
+  if (!currentIds.length) return false
+
+  const itemIds = [
+    item?.localId,
+    item?.id,
+    item?.serverId,
+    item?.pkCdMeioAmbienteCptm,
+    item?.formData?.pkCdMeioAmbienteCptm
+  ].map(value => String(value || '')).filter(Boolean)
+
+  return itemIds.some(id => currentIds.includes(id))
+}
+
+function getInspectionPk(item = {}) {
+  return item.pkCdMeioAmbienteCptm
+    || item.PkCdMeioAmbienteCptm
+    || item.serverId
+    || item.formData?.pkCdMeioAmbienteCptm
+    || ''
+}
+
+function getInspectionRecencyTime(item = {}) {
+  const source = item.formData || item
+  const date = source.dtDataDoCadastramento || source.dtDataEmissaoFormulario
+  const time = source.hrHoraDoCadastramento || '00:00'
+  const dateTime = date ? new Date(`${String(date).slice(0, 10)}T${time}`) : null
+  if (dateTime && !Number.isNaN(dateTime.getTime())) return dateTime.getTime()
+
+  for (const fallback of [item.updatedAt, item.createdAt, item.UpdatedAt, item.CreatedAt]) {
+    const parsed = new Date(fallback)
+    if (!Number.isNaN(parsed.getTime())) return parsed.getTime()
+  }
+
+  return 0
+}
+
+function getInspectionTemplateTime(item = {}) {
+  const time = getInspectionRecencyTime(item)
+  return time || Number.MAX_SAFE_INTEGER
 }
 
 async function loadEfluente() {
@@ -470,7 +767,7 @@ async function loadEfluente() {
     const localRecords = await getAllInspections()
     const localRecord = (localRecords || [])
       .map(normalizeLocalEfluenteRecord)
-      .find(item => item?.syncStatus !== SYNC_STATUS.SENT && String(item?.localId || item?.id) === routeId)
+      .find(item => item?.syncStatus !== SYNC_STATUS.SENT && isSameLocalOrServerRecord(item, routeId))
 
     if (localRecord) {
       localDraftId.value = localRecord.localId
@@ -561,7 +858,28 @@ async function getExistingLocalRecord() {
   if (!id || id === 'new') return null
 
   const localRecords = await getAllInspections()
-  return (localRecords || []).find(item => String(item?.localId || item?.id) === String(id)) || null
+  return (localRecords || [])
+    .map(normalizeLocalEfluenteRecord)
+    .find(item => item?.syncStatus !== SYNC_STATUS.SENT && isSameLocalOrServerRecord(item, id)) || null
+}
+
+function isSameLocalOrServerRecord(item, id) {
+  const key = String(id || '')
+  if (!key) return false
+
+  return String(item?.localId || '') === key
+    || String(item?.id || '') === key
+    || String(item?.pkCdMeioAmbienteCptm || '') === key
+    || String(item?.formData?.pkCdMeioAmbienteCptm || '') === key
+}
+
+function getDraftLocalIdForSave() {
+  if (localDraftId.value) return localDraftId.value
+
+  const routeId = String(route.params.id || '')
+  if (isEditMode.value && routeId && routeId !== 'new') return routeId
+
+  return undefined
 }
 
 function hasDraftableData() {
@@ -579,7 +897,7 @@ async function saveDraft(options = {}) {
   const { images, documents } = splitAttachmentRecords(selectedFiles.value)
   const existingRecord = await getExistingLocalRecord()
   const record = createDraftRecord({
-    localId: localDraftId.value || undefined,
+    localId: getDraftLocalIdForSave(),
     formData: buildPayload(),
     syncStatus,
     lastError,
@@ -601,10 +919,39 @@ async function saveDraft(options = {}) {
   return saved
 }
 
+async function saveDraftAndReturnToDrafts() {
+  if (saving.value) return
+
+  saving.value = true
+  try {
+    await saveDraft({ updateRoute: false })
+    hasSavedSuccessfully.value = true
+    router.push(getDraftsListRoute())
+  } catch (err) {
+    console.error('Erro ao salvar rascunho', err)
+    setStatus(err?.message || 'Nao foi possivel salvar o rascunho.', 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
+function getDraftsListRoute() {
+  return {
+    path: getIsAdmin() ? '/main-admin' : '/main-user',
+    query: getIsAdmin()
+      ? { tab: 'my-inspections', filter: 'scheduled' }
+      : { filter: 'scheduled' }
+  }
+}
+
 async function saveDraftBeforeLeaving() {
   if (saving.value || hasSavedSuccessfully.value) return
   if (!hasDraftableData()) return
-  if (!loadedFromLocal.value && isEditMode.value && route.params.id !== 'new') return
+
+  const shouldSave = typeof window !== 'undefined'
+    ? window.confirm('Deseja salvar como rascunho?')
+    : false
+  if (!shouldSave) return
 
   await saveDraft({ silent: true, updateRoute: false })
 }
@@ -639,7 +986,7 @@ async function submitForm() {
     })
     localDraftId.value = saved.localId || saved.id
     loadedFromLocal.value = true
-    setStatus('Sem conexao. Registro salvo como aguardando envio.', 'warning')
+    setStatus('Sem conexao. Registro salvo como aguardando envio e sera reenviado automaticamente.', 'warning')
     return
   }
 
@@ -691,19 +1038,155 @@ async function submitForm() {
     if (route.params.id !== pk) router.replace(`/form/${encodeURIComponent(pk)}`)
   } catch (err) {
     console.error('Erro ao salvar efluente', err)
-    if (localDraftId.value || loadedFromLocal.value) {
-      const saved = await saveDraft({
-        silent: true,
-        updateRoute: false,
-        syncStatus: SYNC_STATUS.ERROR,
-        lastError: err?.message || 'Erro ao enviar'
-      })
-      localDraftId.value = saved.localId || saved.id
-    }
-    setStatus(err?.message || 'Nao foi possivel salvar o efluente.', 'error')
+    const retryable = isRetryableApiError(err)
+    const saved = await saveDraft({
+      silent: true,
+      updateRoute: false,
+      syncStatus: retryable ? SYNC_STATUS.PENDING_SYNC : SYNC_STATUS.ERROR,
+      lastError: err?.message || 'Erro ao enviar'
+    })
+    localDraftId.value = saved.localId || saved.id
+    loadedFromLocal.value = true
+    setStatus(
+      retryable
+        ? 'Sistema central indisponivel. Registro salvo como aguardando envio e sera reenviado automaticamente.'
+        : (err?.message || 'Nao foi possivel salvar o efluente.'),
+      retryable ? 'warning' : 'error'
+    )
   } finally {
     saving.value = false
   }
+}
+
+async function openCamera() {
+  if (isCameraOpen.value && cameraStream) return
+
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    setStatus('Camera nao disponivel neste navegador.', 'error')
+    return
+  }
+
+  isCameraStarting.value = true
+  setStatus('Abrindo camera...', 'info')
+
+  try {
+    closeCamera({ silent: true })
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false
+    })
+    isCameraOpen.value = true
+    await nextTick()
+
+    if (cameraVideoRef.value) {
+      cameraVideoRef.value.srcObject = cameraStream
+      await cameraVideoRef.value.play?.()
+    }
+
+    setStatus('Camera pronta para capturar.', 'success')
+  } catch (err) {
+    console.error('Erro ao abrir camera', err)
+    closeCamera({ silent: true })
+    setStatus(getCameraErrorMessage(err), 'error')
+  } finally {
+    isCameraStarting.value = false
+  }
+}
+
+function closeCamera({ silent = false } = {}) {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => track.stop())
+    cameraStream = null
+  }
+
+  if (cameraVideoRef.value) {
+    cameraVideoRef.value.srcObject = null
+  }
+
+  isCameraOpen.value = false
+  isCameraCapturing.value = false
+  if (!silent) setStatus('', 'info')
+}
+
+async function captureCameraPhoto() {
+  const video = cameraVideoRef.value
+  if (!cameraStream || !video) {
+    setStatus('Camera ainda nao esta pronta.', 'error')
+    return
+  }
+
+  isCameraCapturing.value = true
+
+  try {
+    const width = video.videoWidth
+    const height = video.videoHeight
+    if (!width || !height) {
+      setStatus('Aguardando imagem da camera...', 'info')
+      return
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Nao foi possivel preparar a foto.')
+
+    context.drawImage(video, 0, 0, width, height)
+    const blob = await canvasToBlob(canvas)
+    const fileName = `foto-${formatPhotoTimestamp(new Date())}.jpg`
+    const file = createPhotoFile(blob, fileName)
+
+    addSelectedFiles([file])
+    setStatus('Foto capturada e adicionada aos anexos.', 'success')
+  } catch (err) {
+    console.error('Erro ao capturar foto', err)
+    setStatus(err?.message || 'Nao foi possivel capturar a foto.', 'error')
+  } finally {
+    isCameraCapturing.value = false
+  }
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob)
+      else reject(new Error('Nao foi possivel salvar a foto.'))
+    }, 'image/jpeg', 0.92)
+  })
+}
+
+function createPhotoFile(blob, name) {
+  if (typeof File !== 'undefined') {
+    return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() })
+  }
+
+  blob.name = name
+  blob.lastModified = Date.now()
+  return blob
+}
+
+function formatPhotoTimestamp(date) {
+  const pad = value => String(value).padStart(2, '0')
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate())
+  ].join('')
+    + '-'
+    + [pad(date.getHours()), pad(date.getMinutes()), pad(date.getSeconds())].join('')
+}
+
+function getCameraErrorMessage(err) {
+  const name = err?.name || ''
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Permissao da camera negada.'
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'Nenhuma camera compativel foi encontrada.'
+  if (name === 'NotReadableError') return 'A camera esta em uso por outro aplicativo.'
+  return err?.message || 'Nao foi possivel abrir a camera.'
 }
 
 function onFilesSelected(event) {
@@ -1088,6 +1571,8 @@ function returnToMain() {
   color: var(--cptm-red);
   font-weight: 900;
   cursor: pointer;
+  appearance: none;
+  text-align: center;
 }
 
 .upload-actions {
@@ -1097,9 +1582,58 @@ function returnToMain() {
   justify-content: flex-end;
 }
 
+.upload-drop.active {
+  border-color: var(--cptm-blue);
+  color: var(--cptm-blue);
+  background: rgba(43, 92, 158, 0.06);
+}
+
+.upload-drop:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .upload-drop:focus-within {
   border-color: var(--cptm-red);
   box-shadow: 0 0 0 3px rgba(215, 25, 32, 0.12);
+}
+
+.upload-drop:focus-visible {
+  outline: 0;
+  border-color: var(--cptm-red);
+  box-shadow: 0 0 0 3px rgba(215, 25, 32, 0.12);
+}
+
+.camera-panel {
+  grid-column: 1 / -1;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--white);
+}
+
+.camera-preview {
+  aspect-ratio: 16 / 9;
+  min-height: 260px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: #111827;
+}
+
+.camera-preview video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  background: #111827;
+}
+
+.camera-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
 }
 
 .attachment-column {
@@ -1311,6 +1845,19 @@ function returnToMain() {
   .upload-actions {
     order: 3;
     flex-direction: column;
+  }
+
+  .camera-preview {
+    min-height: 220px;
+  }
+
+  .camera-actions {
+    flex-direction: column;
+  }
+
+  .camera-actions .btn,
+  .camera-actions .btn-primary {
+    width: 100%;
   }
 
   .attachment-grid {

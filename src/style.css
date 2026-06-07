@@ -267,6 +267,7 @@
   }
 
   .status--draft,
+  .status--error,
   .badge.error,
   .status.error {
     @apply border-red-200 bg-red-50 text-red-700;
@@ -286,6 +287,11 @@
   .toast.success,
   .alert.success {
     @apply border-green-200 bg-green-50 text-green-700;
+  }
+
+  .toast.warning,
+  .alert.warning {
+    @apply border-yellow-200 bg-yellow-50 text-yellow-700;
   }
 
   .toast.error,

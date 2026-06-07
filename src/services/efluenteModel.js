@@ -175,6 +175,59 @@ function normalizeDateInputValue(value) {
   return `${year}-${month}-${day}`
 }
 
+export function normalizeDate(value) {
+  if (!value || value === '') return null
+
+  const text = String(value).trim()
+  if (!text) return null
+
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/)
+  if (isoMatch) {
+    const [, year, month, day, hour, minute, second = '00'] = isoMatch
+    if (!isValidDateParts(year, month, day)) return null
+    if (hour !== undefined && !isValidTimeParts(hour, minute, second)) return null
+    if (hour !== undefined && minute !== undefined) return `${year}-${month}-${day}T${hour}:${minute}:${second}`
+    return `${year}-${month}-${day}`
+  }
+
+  const brMatch = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (brMatch) {
+    const [, day, month, year] = brMatch
+    if (!isValidDateParts(year, month, day)) return null
+    return `${year}-${month}-${day}`
+  }
+
+  return null
+}
+
+function isValidDateParts(year, month, day) {
+  const y = Number(year)
+  const m = Number(month)
+  const d = Number(day)
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return false
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false
+
+  const parsed = new Date(Date.UTC(y, m - 1, d))
+  return parsed.getUTCFullYear() === y
+    && parsed.getUTCMonth() === m - 1
+    && parsed.getUTCDate() === d
+}
+
+function isValidTimeParts(hour, minute, second) {
+  const h = Number(hour)
+  const m = Number(minute)
+  const s = Number(second)
+  return Number.isInteger(h)
+    && Number.isInteger(m)
+    && Number.isInteger(s)
+    && h >= 0
+    && h <= 23
+    && m >= 0
+    && m <= 59
+    && s >= 0
+    && s <= 59
+}
+
 export function createEmptyEfluenteFormData() {
   return EFLUENTE_FIELD_KEYS.reduce((data, key) => {
     data[key] = ''
@@ -192,9 +245,13 @@ export function buildEfluentePayload(formData, { ensurePk = false } = {}) {
   const payload = {}
 
   for (const key of EFLUENTE_FIELD_KEYS) {
-    payload[key] = NUMERIC_EFLUENTE_FIELDS.has(key)
-      ? toNumberOrNull(formData?.[key])
-      : (formData?.[key] ?? '')
+    if (NUMERIC_EFLUENTE_FIELDS.has(key)) {
+      payload[key] = toNumberOrNull(formData?.[key])
+    } else if (DATE_EFLUENTE_FIELDS.has(key)) {
+      payload[key] = normalizeDate(formData?.[key])
+    } else {
+      payload[key] = formData?.[key] ?? ''
+    }
   }
 
   if (!payload.pkCdMeioAmbienteCptm && ensurePk) {
@@ -208,16 +265,52 @@ export function buildEfluentePayload(formData, { ensurePk = false } = {}) {
   return payload
 }
 
-export function mapApiEfluenteToFormData(apiResponse = {}) {
+function unwrapApiEfluenteSource(apiResponse = {}) {
   const source = apiResponse?.data && typeof apiResponse.data === 'object'
     ? apiResponse.data
     : apiResponse
 
+  return source?.efluente
+    || source?.Efluente
+    || source?.registro
+    || source?.Registro
+    || source?.item
+    || source?.Item
+    || source
+}
+
+function toSnakeKey(key) {
+  return String(key).replace(/([A-Z])/g, '_$1').toLowerCase()
+}
+
+function readApiValue(source = {}, key) {
+  const pascalKey = key.charAt(0).toUpperCase() + key.slice(1)
+  const snakeKey = toSnakeKey(key)
+  const candidates = [
+    key,
+    pascalKey,
+    snakeKey,
+    snakeKey.toUpperCase()
+  ]
+
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(source, candidate)) {
+      return source[candidate]
+    }
+  }
+
+  const lowerKey = String(key).toLowerCase()
+  const foundKey = Object.keys(source).find(item => item.toLowerCase() === lowerKey)
+  return foundKey ? source[foundKey] : undefined
+}
+
+export function mapApiEfluenteToFormData(apiResponse = {}) {
+  const source = unwrapApiEfluenteSource(apiResponse)
+
   const formData = createEmptyEfluenteFormData()
 
   for (const key of EFLUENTE_FIELD_KEYS) {
-    const pascalKey = key.charAt(0).toUpperCase() + key.slice(1)
-    const value = source?.[key] ?? source?.[pascalKey] ?? ''
+    const value = readApiValue(source, key) ?? ''
     formData[key] = DATE_EFLUENTE_FIELDS.has(key)
       ? normalizeDateInputValue(value)
       : (value ?? '')
@@ -270,14 +363,15 @@ export function normalizeLocalEfluenteRecord(record) {
       images: Array.isArray(record.images) ? record.images : [],
       documents: Array.isArray(record.documents) ? record.documents : [],
       filesMetadata: Array.isArray(record.filesMetadata) ? record.filesMetadata : [],
-      syncStatus: record.syncStatus || SYNC_STATUS.DRAFT
+      syncStatus: record.syncStatus || normalizeLegacySyncStatus(record.status)
     }
   }
 
   const formData = mapApiEfluenteToFormData(record)
+  const fallbackId = record.localId || record.id || createId()
   return {
-    id: record.localId || record.id || crypto.randomUUID(),
-    localId: record.localId || record.id || crypto.randomUUID(),
+    id: fallbackId,
+    localId: fallbackId,
     pkCdMeioAmbienteCptm: formData.pkCdMeioAmbienteCptm || '',
     formData,
     images: Array.isArray(record.images) ? record.images : [],
@@ -293,8 +387,10 @@ export function normalizeLocalEfluenteRecord(record) {
 export function normalizeApiEfluenteListItem(item = {}) {
   const formData = mapApiEfluenteToFormData(item)
   const pk = formData.pkCdMeioAmbienteCptm
-    || item.pkCdMeioAmbienteCptm
-    || item.PkCdMeioAmbienteCptm
+    || readApiValue(unwrapApiEfluenteSource(item), 'pkCdMeioAmbienteCptm')
+    || item.serverId
+    || item.id
+    || item.Id
     || ''
 
   return {
@@ -319,6 +415,8 @@ export function getEfluenteCardTitle(item = {}) {
     || data.txNrElementoMonitoramento
     || data.txOrigemEfluente
     || data.txFonteGeradora
+    || data.title
+    || data.titulo
     || 'Efluente sem nome'
 }
 
@@ -345,16 +443,14 @@ export function getEfluenteCardMeta(item = {}) {
 }
 
 export function getSyncStatusLabel(syncStatus) {
-  if (syncStatus === SYNC_STATUS.DRAFT) return 'Rascunho'
   if (syncStatus === SYNC_STATUS.PENDING_SYNC) return 'Aguardando Envio'
-  if (syncStatus === SYNC_STATUS.ERROR) return 'Erro de Envio'
+  if (syncStatus === SYNC_STATUS.ERROR || syncStatus === SYNC_STATUS.DRAFT) return 'Nao Enviado'
   return 'Enviado'
 }
 
 export function getSyncStatusVariant(syncStatus) {
-  if (syncStatus === SYNC_STATUS.DRAFT) return 'status--draft'
   if (syncStatus === SYNC_STATUS.PENDING_SYNC) return 'status--waiting'
-  if (syncStatus === SYNC_STATUS.ERROR) return 'status--draft'
+  if (syncStatus === SYNC_STATUS.ERROR || syncStatus === SYNC_STATUS.DRAFT) return 'status--error'
   return 'status--sent'
 }
 
