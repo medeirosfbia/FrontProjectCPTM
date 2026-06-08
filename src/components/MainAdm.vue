@@ -31,6 +31,10 @@
                     @click="setTab('my-inspections')">
                     Meus Registros
                 </button>
+                <button class="tab-btn" :class="{ active: currentTab === 'deleted-inspections' }"
+                    @click="setTab('deleted-inspections')">
+                    Excluídos
+                </button>
                 <button class="tab-btn" @click="openMap">
                     Mapa
                 </button>
@@ -39,14 +43,17 @@
             <!-- Modal de confirmação global -->
             <div v-if="modalVisible" class="modal-overlay" role="dialog" aria-modal="true">
                 <div class="modal">
-                    <h3>{{ modalAction === 'delete' ? 'Confirmar exclusão' : 'Confirmar envio' }}</h3>
-                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} o registro "{{
-                        modalTargetTitle }}"?</p>
+                    <h3>{{ modalTitle }}</h3>
+                    <p>{{ modalMessage }}</p>
                     <div class="modal-actions">
                         <button class="btn cancel" @click="cancelModal">Cancelar</button>
-                        <button v-if="modalAction == 'delete'" class="btn confirm delete" @click="confirmModal">Sim,
-                            apagar</button>
-                        <button v-else class="btn confirm send" @click="confirmModal">Sim, enviar</button>
+                        <button
+                            class="btn confirm"
+                            :class="modalAction === 'delete' ? 'delete' : 'send'"
+                            @click="confirmModal"
+                        >
+                            {{ modalConfirmLabel }}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -174,6 +181,36 @@
                 </div>
             </div>
 
+            <div v-if="currentTab === 'deleted-inspections'">
+                <div class="app-controls">
+                    <div v-if="status" class="sync-message">{{ status }}</div>
+                    <div class="deleted-toolbar">
+                        <button class="btn info" type="button" :disabled="loadingDeleted" @click="loadDeletedEfluentes">
+                            {{ loadingDeleted ? 'Carregando...' : 'Atualizar excluídos' }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-wrap app-table">
+                    <input class="inspection-search" v-model="deletedSearchQuery" placeholder="Buscar excluídos por elemento, município ou linha..." />
+                    <div v-if="loadingDeleted" class="notice">Carregando efluentes excluídos...</div>
+                    <div v-else-if="!filteredDeletedInspections.length" class="notice">Nenhum efluente excluído encontrado.</div>
+                    <section v-else class="list">
+                        <div v-for="ins in filteredDeletedInspections" :key="deletedItemId(ins)" class="inspection">
+                            <div class="left">
+                                <strong class="inspection-title">{{ inspectionTitle(ins) }}</strong>
+                                <div class="meta">{{ inspectionSubtitle(ins) }}</div>
+                            </div>
+                            <div class="right">
+                                <div class="status status--error">Excluído</div>
+                                <button class="btn" @click="openDeletedDetails(ins)">Ver detalhes</button>
+                                <button class="btn restore-btn" @click="confirmAction('restore', ins)">Restaurar</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
         </div>
         <InspectionDetailsModal
             :visible="detailModalVisible"
@@ -235,10 +272,20 @@ import { useRoute, useRouter } from 'vue-router'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
-import { deleteEfluenteAPI } from '../services/api'
 import { cleanupSentLocalInspections, enviarRascunho, sendInspectionNow } from '../services/sync'
 import { consumeQueuedToast } from '../services/toastQueue'
-import { extractEfluenteItems, getAdminUsuarioEfluentesAPI, getMeusEfluentesAPI, getUsuariosAPI, criarUsuarioAPI, updateUsuarioAPI, deletarUsuarioAPI } from '../services/api'
+import {
+    deleteEfluenteAPI,
+    extractEfluenteItems,
+    getAdminUsuarioEfluentesAPI,
+    getEfluentesExcluidosAPI,
+    getMeusEfluentesAPI,
+    getUsuariosAPI,
+    criarUsuarioAPI,
+    updateUsuarioAPI,
+    deletarUsuarioAPI,
+    restoreEfluenteAPI
+} from '../services/api'
 import {
     getEfluenteCardSubtitle,
     getEfluenteCardTitle,
@@ -275,6 +322,9 @@ function setTab(tab) {
     currentTab.value = tab
     if (tab === 'users') {
         selectedUser.value = null
+    }
+    if (tab === 'deleted-inspections') {
+        loadDeletedEfluentes()
     }
 }
 
@@ -601,9 +651,12 @@ const store = useInspectionStore()
 const { inspections } = storeToRefs(store)
 const viewFilter = ref('all')
 const inspectionSearchQuery = ref('')
+const deletedSearchQuery = ref('')
 const status = ref('')
 const loadingApi = ref(false)
+const loadingDeleted = ref(false)
 const sentApiData = ref([])
+const deletedEfluentes = ref([])
 
 // Toast
 const toastTitle = ref('')
@@ -660,6 +713,7 @@ function getInitialFilter() {
 
 onMounted(async () => {
     if (route.query.tab === 'my-inspections') currentTab.value = 'my-inspections'
+    if (route.query.tab === 'deleted-inspections') currentTab.value = 'deleted-inspections'
     await carregarUsuarios()
 
     try {
@@ -678,6 +732,7 @@ onMounted(async () => {
 
     // Carrega do sistema central e renderiza junto com os rascunhos locais.
     await setFilter(getInitialFilter())
+    if (currentTab.value === 'deleted-inspections') await loadDeletedEfluentes()
     showQueuedToast()
 
     if (typeof window !== 'undefined') {
@@ -738,6 +793,30 @@ const filteredInspections = computed(() => {
     return applyInspectionSearch(result)
 })
 
+const filteredDeletedInspections = computed(() => {
+    const query = deletedSearchQuery.value.trim().toLowerCase()
+    const list = deletedEfluentes.value || []
+    if (!query) return list
+
+    return list.filter(i => {
+        const haystack = [
+            i.title,
+            i.titulo,
+            i.formData?.txNmElementoMonitoramento,
+            i.formData?.txNrElementoMonitoramento,
+            i.formData?.txMunicipio,
+            i.formData?.txLinhaCptm,
+            i.formData?.txEstacaoCptm,
+            i.txNmElementoMonitoramento,
+            i.txNrElementoMonitoramento,
+            i.txMunicipio,
+            i.txLinhaCptm,
+            i.txEstacaoCptm
+        ].join(' ').toLowerCase()
+        return haystack.includes(query)
+    })
+})
+
 function applyInspectionSearch(list) {
     const query = inspectionSearchQuery.value.trim().toLowerCase()
     if (!query) return list
@@ -761,6 +840,10 @@ function applyInspectionSearch(list) {
     })
 }
 
+function deletedItemId(ins) {
+    return getEfluenteId(ins) || JSON.stringify(ins)
+}
+
 async function setFilter(key) {
     viewFilter.value = key
     if (key === 'sent' || key === 'all') {
@@ -781,12 +864,50 @@ async function setFilter(key) {
     }
 }
 
+async function loadDeletedEfluentes() {
+    loadingDeleted.value = true
+    try {
+        const response = await getEfluentesExcluidosAPI({ pageSize: 100 })
+        deletedEfluentes.value = extractEfluenteItems(response).map(normalizeInspection)
+        status.value = ''
+    } catch (err) {
+        console.error('Erro ao carregar efluentes excluidos', err)
+        deletedEfluentes.value = []
+        status.value = 'Erro ao carregar efluentes excluídos.'
+        showToast('Erro ao carregar efluentes excluídos.', 'error')
+    } finally {
+        loadingDeleted.value = false
+    }
+}
+
 function openNewInspection() {
     router.push('/form/new')
 }
 
 function openMap() {
     router.push('/map')
+}
+
+function getEfluenteId(ins) {
+    return ins?.localId
+        || ins?.id
+        || ins?.pkCdMeioAmbienteCptm
+        || ins?.serverId
+        || ins?.formData?.pkCdMeioAmbienteCptm
+}
+
+function removeEfluenteFromLists(id) {
+    const idStr = String(id || '')
+    if (!idStr) return
+
+    store.inspections = store.inspections.filter(i => String(getEfluenteId(i) || '') !== idStr)
+    sentApiData.value = sentApiData.value.filter(i => String(getEfluenteId(i) || '') !== idStr)
+    userInspections.value = userInspections.value.filter(i => String(getEfluenteId(i) || '') !== idStr)
+    deletedEfluentes.value = deletedEfluentes.value.filter(i => String(getEfluenteId(i) || '') !== idStr)
+}
+
+function openDeletedDetails(ins) {
+    openDetails(ins)
 }
 
 function goToForm(ins) {
@@ -920,9 +1041,7 @@ function updateRecordInStore(record) {
 async function deleteInspection(ins) {
     try {
         const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
-        const id = isLocal
-            ? (ins.localId || ins.id)
-            : (ins.pkCdMeioAmbienteCptm || ins.serverId)
+        const id = getEfluenteId(ins)
 
         if (!id) {
             showToast('ID do efluente nao encontrado.', 'error')
@@ -937,8 +1056,8 @@ async function deleteInspection(ins) {
         if (localIdx >= 0) {
             try {
                 await deleteInspectionDB(id)
-                store.inspections = store.inspections.filter(i => String(i.localId || i.id) !== idStr)
-                showToast('Efluente apagado localmente.', 'success')
+                removeEfluenteFromLists(idStr)
+                showToast('Efluente excluído localmente.', 'success')
             } catch (e) {
                 console.error('Erro ao apagar localmente', e)
                 showToast('Erro ao apagar localmente.', 'error')
@@ -946,8 +1065,9 @@ async function deleteInspection(ins) {
         } else {
             try {
                 await deleteEfluenteAPI(idStr)
-                sentApiData.value = sentApiData.value.filter(i => String(i.pkCdMeioAmbienteCptm || i.serverId) !== idStr)
-                showToast('Efluente apagado do servidor.', 'success')
+                removeEfluenteFromLists(idStr)
+                if (currentTab.value === 'deleted-inspections') await loadDeletedEfluentes()
+                showToast('Efluente excluído com sucesso.', 'success')
             } catch (e) {
                 console.error('Erro ao apagar no servidor', e)
                 status.value = 'Nao foi possivel apagar do servidor.'
@@ -956,6 +1076,26 @@ async function deleteInspection(ins) {
         }
     } catch (err) {
         console.error('Erro ao apagar efluente', err)
+    }
+}
+
+async function restoreInspection(ins) {
+    const id = getEfluenteId(ins)
+    if (!id) {
+        showToast('ID do efluente nao encontrado.', 'error')
+        return
+    }
+
+    try {
+        await restoreEfluenteAPI(String(id))
+        removeEfluenteFromLists(id)
+        await loadDeletedEfluentes()
+        await setFilter(viewFilter.value)
+        showToast('Efluente restaurado com sucesso.', 'success')
+    } catch (err) {
+        console.error('Erro ao restaurar efluente', err)
+        status.value = 'Nao foi possivel restaurar o efluente.'
+        showToast('Erro ao restaurar efluente.', 'error')
     }
 }
 
@@ -986,6 +1126,22 @@ const modalVisible = ref(false)
 const modalAction = ref('')
 const modalTarget = ref(null)
 const modalTargetTitle = computed(() => modalTarget.value ? getEfluenteCardTitle(modalTarget.value) : '')
+const modalTitle = computed(() => {
+    if (modalAction.value === 'delete') return 'Confirmar exclusão'
+    if (modalAction.value === 'restore') return 'Confirmar restauração'
+    return 'Confirmar envio'
+})
+const modalMessage = computed(() => {
+    const title = modalTargetTitle.value
+    if (modalAction.value === 'delete') return `Tem certeza que deseja excluir o registro "${title}"?`
+    if (modalAction.value === 'restore') return `Tem certeza que deseja restaurar o registro "${title}"?`
+    return `Tem certeza que deseja enviar o registro "${title}"?`
+})
+const modalConfirmLabel = computed(() => {
+    if (modalAction.value === 'delete') return 'Sim, excluir'
+    if (modalAction.value === 'restore') return 'Sim, restaurar'
+    return 'Sim, enviar'
+})
 
 function confirmAction(action, ins) {
     modalAction.value = action
@@ -1008,6 +1164,7 @@ async function confirmModal() {
 
     if (action === 'send') await enviarRascunhoPeloMenu(target)
     else if (action === 'delete') await deleteInspection(target)
+    else if (action === 'restore') await restoreInspection(target)
 }
 
 function cancelModal() {
@@ -1290,6 +1447,11 @@ function cancelModal() {
     gap: 1rem;
 }
 
+.deleted-toolbar {
+    display: flex;
+    justify-content: flex-end;
+}
+
 .inspection-search {
     width: 100%;
     padding: 12px 14px;
@@ -1495,6 +1657,12 @@ function cancelModal() {
 .send-btn {
     background: #097a5e;
     color: #fff;
+}
+
+.restore-btn {
+    background: #097a5e;
+    color: #fff;
+    border-color: #097a5e;
 }
 
 .send-btn:disabled,

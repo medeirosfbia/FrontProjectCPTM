@@ -57,7 +57,18 @@ import Header from './ui/Header.vue'
 import LoadingSkeleton from './ui/LoadingSkeleton.vue'
 import PageContainer from './ui/PageContainer.vue'
 import ToastAlert from './ui/ToastAlert.vue'
-import { getEfluenteAnexoBlobAPI, getEfluenteAnexosAPI, getEfluenteByPkAPI } from '../services/api'
+import { getAllInspections, getInspection } from '../services/db'
+import {
+  extractEfluenteItems,
+  getAdminEfluentesAPI,
+  getEfluenteAnexoBlobAPI,
+  getEfluenteAnexosAPI,
+  getEfluenteByPkAPI,
+  getEfluentesExcluidosAPI,
+  getMeusEfluentesAPI
+} from '../services/api'
+import { consumeDetailsRecord } from '../services/detailsCache'
+import { mapApiEfluenteToFormData, normalizeLocalEfluenteRecord } from '../services/efluenteModel'
 
 const route = useRoute()
 const router = useRouter()
@@ -116,15 +127,147 @@ onBeforeUnmount(() => {
 async function load() {
   loading.value = true
   error.value = ''
+  attachments.value = []
+  const id = route.params.id
+
   try {
-    efluente.value = await getEfluenteByPkAPI(route.params.id)
-    const data = await getEfluenteAnexosAPI(route.params.id)
-    attachments.value = Array.isArray(data) ? data : []
+    const cached = consumeDetailsRecord(id)
+    if (cached) {
+      efluente.value = normalizeDetailsRecord(cached)
+      if (!cached.__skipAttachmentsEndpoint) await loadAttachments(id)
+      return
+    }
+
+    try {
+      const data = await getEfluenteByPkAPI(id)
+      efluente.value = normalizeDetailsRecord(data)
+      await loadAttachments(id)
+      return
+    } catch (err) {
+      console.warn('Detalhes nao encontrados no endpoint principal, tentando fallback.', err)
+    }
+
+    const fallback = await findFallbackDetails(id)
+    if (!fallback) throw new Error('Registro nao encontrado')
+
+    efluente.value = fallback
+    if (!fallback.__skipAttachmentsEndpoint) await loadAttachments(id)
   } catch (err) {
-    console.error(err)
+    console.error('Erro ao carregar detalhes do efluente', err)
     error.value = 'Nao foi possivel carregar os detalhes.'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadAttachments(id) {
+  try {
+    const data = await getEfluenteAnexosAPI(id)
+    attachments.value = Array.isArray(data) ? data : []
+  } catch (err) {
+    console.warn('Nao foi possivel carregar anexos dos detalhes.', err)
+    attachments.value = []
+  }
+}
+
+async function findFallbackDetails(id) {
+  const cached = consumeDetailsRecord(id)
+  if (cached) return normalizeDetailsRecord(cached)
+
+  const localDirect = await getInspection(id)
+  if (localDirect) return normalizeDetailsRecord(normalizeLocalEfluenteRecord(localDirect))
+
+  const localList = await getAllInspections()
+  const localFound = (localList || []).find(item => recordMatchesId(item, id))
+  if (localFound) return normalizeDetailsRecord(normalizeLocalEfluenteRecord(localFound))
+
+  const loaders = [
+    () => getEfluentesExcluidosAPI({ pageSize: 100 }),
+    () => getAdminEfluentesAPI({ pageSize: 100 }),
+    () => getMeusEfluentesAPI({ pageSize: 100 })
+  ]
+
+  for (const loadList of loaders) {
+    try {
+      const response = await loadList()
+      const found = extractEfluenteItems(response).find(item => recordMatchesId(item, id))
+      if (found) return normalizeDetailsRecord(found)
+    } catch (err) {
+      console.warn('Fallback de detalhes falhou.', err)
+    }
+  }
+
+  return null
+}
+
+function recordMatchesId(item = {}, id) {
+  const key = String(id || '')
+  if (!key) return false
+
+  return [
+    item.localId,
+    item.id,
+    item.ID,
+    item.Id,
+    item.serverId,
+    item.pkCdMeioAmbienteCptm,
+    item.PkCdMeioAmbienteCptm,
+    item.pkCdMeioAmbienteCPTM,
+    item.formData?.pkCdMeioAmbienteCptm,
+    item.raw?.localId,
+    item.raw?.id,
+    item.raw?.ID,
+    item.raw?.Id,
+    item.raw?.serverId,
+    item.raw?.pkCdMeioAmbienteCptm,
+    item.raw?.PkCdMeioAmbienteCptm,
+    item.raw?.pkCdMeioAmbienteCPTM
+  ].some(value => String(value || '') === key)
+}
+
+function firstFilled(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== '') return value
+  }
+
+  return ''
+}
+
+function normalizeDetailsRecord(record = {}) {
+  if (!record) return null
+
+  const raw = record.raw && typeof record.raw === 'object' ? record.raw : {}
+  const source = record.formData
+    ? { ...raw, ...record, ...record.formData }
+    : { ...raw, ...record, ...mapApiEfluenteToFormData(raw), ...mapApiEfluenteToFormData(record) }
+
+  const id = firstFilled(
+    source.pkCdMeioAmbienteCptm,
+    source.PkCdMeioAmbienteCptm,
+    source.pkCdMeioAmbienteCPTM,
+    source.serverId,
+    source.localId,
+    source.id,
+    source.ID,
+    source.Id,
+    route.params.id
+  )
+
+  return {
+    ...source,
+    id,
+    serverId: firstFilled(source.serverId, id),
+    pkCdMeioAmbienteCptm: firstFilled(source.pkCdMeioAmbienteCptm, source.PkCdMeioAmbienteCptm, source.pkCdMeioAmbienteCPTM, id),
+    txNrElementoMonitoramento: firstFilled(source.txNrElementoMonitoramento, source.TxNrElementoMonitoramento, source.numeroInspecao, source.NumeroInspecao, source.numero, source.Numero),
+    txNmElementoMonitoramento: firstFilled(source.txNmElementoMonitoramento, source.TxNmElementoMonitoramento, source.nomeElemento, source.NomeElemento, source.elemento, source.Elemento, source.title, source.titulo, source.numeroInspecao),
+    txStatusDoRegistroNoBd: firstFilled(source.txStatusDoRegistroNoBd, source.TxStatusDoRegistroNoBd, source.status, source.Status, source.syncStatus),
+    txMunicipio: firstFilled(source.txMunicipio, source.TxMunicipio, source.municipio, source.Municipio),
+    txLinhaCptm: firstFilled(source.txLinhaCptm, source.TxLinhaCptm, source.linhaCptm, source.LinhaCptm, source.linha, source.Linha),
+    txEstacaoCptm: firstFilled(source.txEstacaoCptm, source.TxEstacaoCptm, source.estacao, source.Estacao),
+    dtDataDoCadastramento: firstFilled(source.dtDataDoCadastramento, source.DtDataDoCadastramento, source.data, source.Data, source.createdAt, source.CreatedAt),
+    txAutorPfDoCadastro: firstFilled(source.txAutorPfDoCadastro, source.TxAutorPfDoCadastro, source.usuarioCriador, source.UsuarioCriador, source.criadoPor, source.CriadoPor),
+    nrLatGrauDecimalWgs84: firstFilled(source.nrLatGrauDecimalWgs84, source.NrLatGrauDecimalWgs84, source.latitude, source.Latitude, source.lat, source.Lat),
+    nrLongGrauDecimalWgs84: firstFilled(source.nrLongGrauDecimalWgs84, source.NrLongGrauDecimalWgs84, source.longitude, source.Longitude, source.lng, source.Lng, source.long, source.Long)
   }
 }
 

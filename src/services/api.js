@@ -409,6 +409,31 @@ export async function getEfluentesMapaAPI(params = {}) {
   return apiFetch(`/efluentes/mapa${buildEfluenteMapQuery(params)}`, { method: 'GET' })
 }
 
+export async function getEfluentesExcluidosAPI(params = {}) {
+  const query = buildEfluenteListQuery(params)
+  const candidates = [
+    `/admin/efluentes/excluidos${query}`,
+    `/efluentes/excluidos${query}`,
+    `/efluentes/deletados${query}`,
+    `/admin/efluentes/deletados${query}`
+  ]
+
+  let lastError = null
+
+  for (const path of candidates) {
+    try {
+      const res = await apiFetch(path, { method: 'GET' })
+      return normalizeEfluenteListResponse(res)
+    } catch (err) {
+      lastError = err
+      const status = Number(err?.status || err?.response?.status || 0)
+      if (status && status !== 400 && status !== 404 && status !== 405) throw err
+    }
+  }
+
+  throw lastError || new Error('Nao foi possivel carregar efluentes excluidos')
+}
+
 export async function getAdminUsuarioEfluentesAPI(usuarioId, params = {}) {
   if (usuarioId === undefined || usuarioId === null || usuarioId === '') {
     throw new Error('usuarioId obrigatorio')
@@ -431,6 +456,10 @@ export async function updateEfluenteAPI(pk, data) {
 
 export async function deleteEfluenteAPI(pk) {
   return apiFetch(`/efluentes/${encodeURIComponent(pk)}`, { method: 'DELETE' })
+}
+
+export async function restoreEfluenteAPI(pk) {
+  return apiFetch(`/efluentes/${encodeURIComponent(pk)}/restore`, { method: 'POST' })
 }
 
 export async function uploadEfluenteAnexosAPI(pk, files = []) {
@@ -533,11 +562,13 @@ export default {
   getMeusEfluentesAPI,
   getAdminEfluentesAPI,
   getEfluentesMapaAPI,
+  getEfluentesExcluidosAPI,
   getAdminUsuarioEfluentesAPI,
   getEfluenteByPkAPI,
   updateEfluenteAPI,
   updateEfluenteMultipartAPI,
   deleteEfluenteAPI,
+  restoreEfluenteAPI,
   uploadEfluenteAnexosAPI,
   getEfluenteAnexosAPI,
   getEfluenteAnexoBlobAPI,

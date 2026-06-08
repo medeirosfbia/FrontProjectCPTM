@@ -106,6 +106,7 @@ import Header from './ui/Header.vue'
 import PageContainer from './ui/PageContainer.vue'
 import ToastAlert from './ui/ToastAlert.vue'
 import { extractEfluenteItems, getAdminEfluentesAPI, getEfluentesMapaAPI } from '../services/api'
+import { queueDetailsRecord } from '../services/detailsCache'
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({ iconRetinaUrl: markerIcon2x, iconUrl: markerIcon, shadowUrl: markerShadow })
@@ -190,6 +191,7 @@ function normalizeMapRecord(item = {}) {
   const data = readValue(source, ['data', 'Data', 'dtDataDoCadastramento', 'DtDataDoCadastramento', 'createdAt', 'CreatedAt'])
 
   return {
+    raw: source,
     id,
     numeroInspecao: readValue(source, ['numeroInspecao', 'NumeroInspecao', 'numero', 'Numero', 'nrNumeroDeFormulario', 'NrNumeroDeFormulario', 'txNrElementoMonitoramento', 'TxNrElementoMonitoramento']) || id || 'Não informado',
     latitude,
@@ -313,6 +315,7 @@ function clearFilters() {
 
 function openInspection(record) {
   if (!record?.id) return
+  queueDetailsRecord({ ...record, __skipDetailsEndpoint: true, __skipAttachmentsEndpoint: true })
   router.push(`/inspections/${encodeURIComponent(record.id)}/details`)
 }
 
