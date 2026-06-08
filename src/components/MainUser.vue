@@ -76,14 +76,13 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
-import { onMounted } from 'vue'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
-import { cleanupSentLocalInspections, queueInspectionForSync, sendInspectionNow } from '../services/sync'
-import { deleteEfluenteAPI, extractEfluenteItems, getToken, getMeusEfluentesAPI } from '../services/api'
+import { cleanupSentLocalInspections, enviarRascunho, sendInspectionNow } from '../services/sync'
+import { deleteEfluenteAPI, extractEfluenteItems, getMeusEfluentesAPI } from '../services/api'
 import { getEfluenteCardTitle, normalizeApiEfluenteListItem, normalizeLocalEfluenteRecord, SYNC_STATUS } from '../services/efluenteModel'
 import { Plus, Calendar, Send, ClipboardList, LogOut, User } from 'lucide-vue-next'
 import QuickGrid from './QuickGrid.vue'
@@ -110,6 +109,16 @@ onMounted(async () => {
 
     // Carrega do sistema central e renderiza junto com os rascunhos locais.
     await setFilter(getInitialFilter())
+
+    if (typeof window !== 'undefined') {
+        window.addEventListener('inspections-synced', handleSyncUpdated)
+    }
+})
+
+onBeforeUnmount(() => {
+    if (typeof window !== 'undefined') {
+        window.removeEventListener('inspections-synced', handleSyncUpdated)
+    }
 })
 
 
@@ -129,6 +138,24 @@ const detailTarget = ref(null)
 const activeMenu = ref(null)
 function toggleMenu(id) {
     activeMenu.value = activeMenu.value === id ? null : id
+}
+
+async function handleSyncUpdated() {
+    try {
+        await cleanupSentLocalInspections()
+        const data = await getAllInspections()
+        const currentUser = localStorage.getItem('user_email')
+
+        store.inspections = data
+            .map(normalizeLocalEfluenteRecord)
+            .filter(Boolean)
+            .filter(i => i.syncStatus !== SYNC_STATUS.SENT)
+            .filter(i => !i.userEmail || i.userEmail === currentUser)
+
+        await setFilter(viewFilter.value)
+    } catch (err) {
+        console.error('Erro ao atualizar listagem apos sincronizacao', err)
+    }
 }
 
 function openDetails(ins) {
@@ -195,79 +222,98 @@ function getInitialFilter() {
     return route.query.filter === 'scheduled' ? 'scheduled' : 'all'
 }
 
-async function sendInspection(ins) {
-    const normalized = normalizeLocalEfluenteRecord(ins)
-    if (!normalized) return
-    showToast('Enviando registro...', 'success', 1800)
+async function enviarRascunhoPeloMenu(ins) {
+    console.log('[3 pontos] Enviar clicado', ins)
+    console.log('[3 pontos] localId', ins?.localId)
 
-    // if offline, notify and return
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        status.value = 'Sem conexao. O registro ficou aguardando envio e sera reenviado automaticamente.'
-        await queueLocalInspectionForRetry(normalized)
-        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
-        return
-    }
+    const localId = ins?.localId || ins?.id || ins?.pkCdMeioAmbienteCptm || ins?.formData?.pkCdMeioAmbienteCptm
 
-    // require auth
-    const token = getToken()
-    if (!token) {
-        status.value = 'Usuário não autenticado. Faça login para sincronizar.'
-        await updateLocalInspectionAfterSend(normalized)
-        return
-    }
-
-    // attempt sync
-    status.value = 'Sincronizando com o sistema central...'
     try {
-        const result = await sendInspectionNow(normalized)
+        const queued = await enviarRascunho(ins, {
+            onQueued: updateRecordInStore,
+            attemptSend: false
+        })
 
-        const localId = String(normalized.localId || normalized.id)
+        if (!queued) {
+            showToast('Rascunho nao encontrado.', 'error')
+            return
+        }
+
+        updateRecordInStore(queued)
+        status.value = 'Aguardando envio. Tentaremos enviar automaticamente quando a conexao ou o sistema central voltar.'
+        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
+
+        setTimeout(() => {
+            enviarRegistroEmSegundoPlano(queued, localId)
+        }, 0)
+    } catch (e) {
+        console.error('Erro ao sincronizar', e)
+        status.value = 'Sistema central indisponivel. O registro ficou aguardando envio e sera reenviado automaticamente.'
+        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
+    }
+}
+
+async function enviarRegistroEmSegundoPlano(record, fallbackId) {
+    try {
+        console.log('[3 pontos] chamando sendInspectionNow forceSend=true')
+        const result = await sendInspectionNow(record, { forceSend: true })
+        if (!result) return
+
+        const localIdStr = String(result.localId || result.id || fallbackId || '')
         if (result?.syncStatus === SYNC_STATUS.SENT) {
-            store.inspections = store.inspections.filter(i => String(i.localId || i.id) !== localId)
+            store.inspections = store.inspections.filter(i => String(i.localId || i.id) !== localIdStr)
             await setFilter(viewFilter.value)
             status.value = 'Registro enviado com sucesso.'
             showToast('Registro enviado com sucesso.', 'success')
             return
         }
 
-        const idx = store.inspections.findIndex(i => String(i.localId || i.id) === localId)
-        if (idx >= 0 && result) store.inspections[idx] = { ...result }
-        else if (result) store.inspections.push(result)
+        updateRecordInStore(result)
 
-        const waitingNetwork = result?.syncStatus === SYNC_STATUS.PENDING_SYNC
+        if (result?.syncStatus === SYNC_STATUS.PENDING_SYNC) {
+            status.value = 'Aguardando envio. Tentaremos enviar automaticamente quando a conexao ou o sistema central voltar.'
+            return
+        }
+
         status.value = result?.lastError
-            ? `${waitingNetwork ? 'Aguardando envio' : 'Nao foi possivel enviar'}: ${result.lastError}`
-            : waitingNetwork
-                ? 'Aguardando envio. Tentaremos enviar automaticamente quando a conexao ou o sistema central voltar.'
-                : 'Nao foi possivel enviar para o sistema central.'
-        showToast(
-            waitingNetwork ? 'Aguardando envio. Tentaremos automaticamente.' : 'Registro nao enviado.',
-            waitingNetwork ? 'warning' : 'error'
-        )
+            ? `Erro de envio: ${result.lastError}`
+            : 'Erro de envio. Verifique os dados do registro.'
+        showToast('Erro de envio.', 'error')
     } catch (e) {
-        console.error('Erro ao sincronizar', e)
-        await queueLocalInspectionForRetry(normalized, e?.message || 'Sistema central indisponivel')
+        console.error('Erro ao sincronizar em segundo plano', e)
+        const pending = normalizeLocalEfluenteRecord(record)
+        if (pending) {
+            pending.syncStatus = SYNC_STATUS.PENDING_SYNC
+            pending.status = 'Aguardando Envio'
+            pending.lastError = null
+            const saved = await saveInspection(pending)
+            updateRecordInStore(saved)
+        }
         status.value = 'Sistema central indisponivel. O registro ficou aguardando envio e sera reenviado automaticamente.'
-        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
     }
 }
 
-async function queueLocalInspectionForRetry(record, lastError = '') {
-    const saved = await queueInspectionForSync(record, lastError)
-    const id = String(saved.localId || saved.id)
-    const idx = store.inspections.findIndex(i => String(i.localId || i.id) === id)
-    if (idx >= 0) store.inspections[idx] = { ...saved }
-    else store.inspections.push(saved)
-    return saved
-}
+function updateRecordInStore(record) {
+    const normalized = normalizeLocalEfluenteRecord(record)
+    if (!normalized) return
 
-async function updateLocalInspectionAfterSend(record) {
-    const result = await sendInspectionNow(record)
-    const id = String(result.localId || result.id)
-    const idx = store.inspections.findIndex(i => String(i.localId || i.id) === id)
-    if (idx >= 0) store.inspections[idx] = { ...result }
-    else store.inspections.push(result)
-    return result
+    const keys = [
+        normalized.localId,
+        normalized.id,
+        normalized.pkCdMeioAmbienteCptm,
+        normalized.serverId,
+        normalized.formData?.pkCdMeioAmbienteCptm
+    ].map(value => String(value || '')).filter(Boolean)
+    const idx = store.inspections.findIndex(item => [
+        item.localId,
+        item.id,
+        item.pkCdMeioAmbienteCptm,
+        item.serverId,
+        item.formData?.pkCdMeioAmbienteCptm
+    ].some(value => keys.includes(String(value || ''))))
+    store.inspections = idx >= 0
+        ? store.inspections.map((item, index) => index === idx ? { ...normalized } : item)
+        : [...store.inspections, normalized]
 }
 
 async function cancelPendingSend(ins) {
@@ -450,7 +496,7 @@ async function confirmModal() {
     modalAction.value = ''
 
     if (action === 'send') {
-        await sendInspection(target)
+        await enviarRascunhoPeloMenu(target)
     } else if (action === 'delete') {
         await deleteInspection(target)
     }

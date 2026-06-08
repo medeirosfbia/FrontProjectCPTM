@@ -65,7 +65,7 @@
 
       <div class="modal-actions">
         <button class="btn" @click="downloadPdf">Baixar PDF</button>
-        <button class="btn warning" @click="editCurrent">Editar</button>
+        <button v-if="canEdit" class="btn warning" @click="editCurrent">Editar</button>
         <button class="btn cancel" @click="close">Fechar</button>
       </div>
     </div>
@@ -100,6 +100,7 @@ const previewType = ref('')
 let previewObjectUrl = ''
 
 const isSentRecord = computed(() => (props.inspection?.syncStatus || SYNC_STATUS.SENT) === SYNC_STATUS.SENT)
+const canEdit = computed(() => props.inspection?.syncStatus !== SYNC_STATUS.PENDING_SYNC)
 const pk = computed(() => props.inspection?.pkCdMeioAmbienteCptm || props.inspection?.serverId || props.inspection?.id || '')
 const title = computed(() => props.inspection?.txNmElementoMonitoramento || props.inspection?.title || 'Sem nome')
 const lat = computed(() => props.inspection?.nrLatGrauDecimalWgs84 ?? props.inspection?.latitude)
@@ -121,6 +122,7 @@ function close() {
 }
 
 function editCurrent() {
+  if (!canEdit.value) return
   if (!pk.value) return
   close()
   router.push(`/form/${encodeURIComponent(pk.value)}`)

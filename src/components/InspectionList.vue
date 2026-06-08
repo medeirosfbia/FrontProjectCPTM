@@ -237,9 +237,9 @@ function downloadPdf(ins) {
 }
 
 .status--draft {
-  background: #ffe6e6;
-  color: #b42318;
-  border-color: #f5b4b4;
+  background: #f3f4f6;
+  color: #4b5563;
+  border-color: #e5e7eb;
 }
 
 .status--error {

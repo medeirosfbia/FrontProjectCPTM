@@ -444,13 +444,15 @@ export function getEfluenteCardMeta(item = {}) {
 
 export function getSyncStatusLabel(syncStatus) {
   if (syncStatus === SYNC_STATUS.PENDING_SYNC) return 'Aguardando Envio'
-  if (syncStatus === SYNC_STATUS.ERROR || syncStatus === SYNC_STATUS.DRAFT) return 'Nao Enviado'
+  if (syncStatus === SYNC_STATUS.ERROR) return 'Erro de Envio'
+  if (syncStatus === SYNC_STATUS.DRAFT) return 'Rascunho'
   return 'Enviado'
 }
 
 export function getSyncStatusVariant(syncStatus) {
   if (syncStatus === SYNC_STATUS.PENDING_SYNC) return 'status--waiting'
-  if (syncStatus === SYNC_STATUS.ERROR || syncStatus === SYNC_STATUS.DRAFT) return 'status--error'
+  if (syncStatus === SYNC_STATUS.ERROR) return 'status--error'
+  if (syncStatus === SYNC_STATUS.DRAFT) return 'status--draft'
   return 'status--sent'
 }
 

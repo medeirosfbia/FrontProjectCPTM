@@ -3,6 +3,30 @@ import { normalizeApiEfluenteListItem } from './efluenteModel'
 export const API_ORIGIN = 'http://localhost:5000'
 const BASE = `${API_ORIGIN}/api`
 const EFLUENTES_BASE = `${BASE}/efluentes`
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
+  if (typeof AbortController === 'undefined' || options.signal) {
+    return fetch(url, options)
+  }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      const timeoutError = new Error('timeout')
+      timeoutError.name = 'TimeoutError'
+      throw timeoutError
+    }
+
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
 
 export function getToken() {
   return localStorage.getItem('auth_token') || null
@@ -113,7 +137,7 @@ export async function apiFetch(path, options = {}) {
     if (typeof requestOptions.body !== 'string') requestOptions.body = JSON.stringify(requestOptions.body)
   }
 
-  const res = await fetch(url, { ...requestOptions, headers })
+  const res = await fetchWithTimeout(url, { ...requestOptions, headers })
 
   if (res.status === 401) {
     logout()
@@ -291,7 +315,7 @@ async function sendEfluenteMultipart(path, method, payload, files = []) {
     form.append('files', file, file.name || 'anexo')
   }
 
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetchWithTimeout(`${BASE}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${token}`
@@ -324,25 +348,39 @@ export async function createEfluenteMultipartAPI(data, files = []) {
   return sendEfluenteMultipart('/efluentes', 'POST', data, files)
 }
 
-export function isRetryableApiError(err) {
-  const status = Number(err?.status || err?.response?.status || 0)
+export function isTemporaryNetworkError(error) {
+  const status = Number(error?.status || error?.response?.status || 0)
   if (status) {
-    return status === 401 || status === 408 || status === 429 || status >= 500
+    return status === 408
+      || status === 429
+      || status === 502
+      || status === 503
+      || status === 504
   }
 
-  const name = String(err?.name || '').toLowerCase()
-  const message = String(err?.message || err || '').toLowerCase()
+  const isOnline = typeof navigator === 'undefined' ? true : navigator.onLine
+  const name = String(error?.name || '').toLowerCase()
+  const message = String(error?.message || error || '').toLowerCase()
 
-  return name === 'typeerror'
+  return !isOnline
+    || name === 'typeerror'
+    || name === 'timeouterror'
+    || name === 'aborterror'
     || message.includes('failed to fetch')
-    || message.includes('network')
+    || message.includes('networkerror')
+    || message.includes('err_connection_refused')
     || message.includes('load failed')
     || message.includes('timeout')
+    || message.includes('network request failed')
+    || message.includes('connection refused')
+    || message.includes('conexao recusada')
+    || message.includes('conexão recusada')
     || message.includes('inacess')
     || message.includes('offline')
-    || message.includes('unauthorized')
-    || message.includes('nao autenticado')
-    || message.includes('não autenticado')
+}
+
+export function isRetryableApiError(err) {
+  return isTemporaryNetworkError(err)
 }
 
 export async function updateEfluenteMultipartAPI(pk, data, files = []) {
@@ -391,7 +429,7 @@ export async function uploadEfluenteAnexosAPI(pk, files = []) {
   const form = new FormData()
   for (const file of selectedFiles) form.append('files', file)
 
-  const res = await fetch(`${EFLUENTES_BASE}/${encodeURIComponent(pk)}/anexos`, {
+  const res = await fetchWithTimeout(`${EFLUENTES_BASE}/${encodeURIComponent(pk)}/anexos`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`
@@ -416,7 +454,7 @@ export async function getEfluenteAnexoBlobAPI(attachmentId) {
   const token = getToken()
   if (!token) throw new Error('Usuario nao autenticado')
 
-  const res = await fetch(`${EFLUENTES_BASE}/anexos/${encodeURIComponent(attachmentId)}`, {
+  const res = await fetchWithTimeout(`${EFLUENTES_BASE}/anexos/${encodeURIComponent(attachmentId)}`, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`
@@ -464,6 +502,7 @@ export default {
   apiFetch,
   login,
   logout,
+  isTemporaryNetworkError,
   getToken,
   getIsAdmin,
   getCurrentUserId,

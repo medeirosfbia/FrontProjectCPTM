@@ -266,11 +266,14 @@
     @apply border-blue-200 bg-blue-50 text-blue-700;
   }
 
-  .status--draft,
   .status--error,
   .badge.error,
   .status.error {
     @apply border-red-200 bg-red-50 text-red-700;
+  }
+
+  .status--draft {
+    @apply border-slate-200 bg-slate-50 text-slate-700;
   }
 
   .notice,

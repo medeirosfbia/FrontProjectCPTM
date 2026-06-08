@@ -1,12 +1,12 @@
 import { ref } from 'vue'
-import { deleteInspection, getAllInspections, saveInspection } from './db'
+import { deleteInspection, getAllInspections, getInspection, saveInspection } from './db'
 import { useInspectionStore } from '../stores/inspectionStore'
 import {
     createEfluenteAPI,
     createEfluenteMultipartAPI,
     getInspectionsAPI,
     getToken,
-    isRetryableApiError,
+    isTemporaryNetworkError,
     updateEfluenteAPI,
     updateEfluenteMultipartAPI
 } from './api'
@@ -25,7 +25,7 @@ let syncTimerId = null
 
 export const syncState = ref('')
 
-export async function queueInspectionForSync(record, lastError = '') {
+export async function queueInspectionForSync(record, lastError = null) {
     const normalized = normalizeLocalEfluenteRecord(record)
     if (!normalized) return record
 
@@ -35,11 +35,87 @@ export async function queueInspectionForSync(record, lastError = '') {
     return saveInspection(normalized)
 }
 
-export async function sendInspectionNow(record) {
+function getRecordKeys(source) {
+    if (!source) return []
+
+    if (typeof source !== 'object') {
+        return [String(source)].filter(Boolean)
+    }
+
+    return [
+        source.localId,
+        source.id,
+        source.pkCdMeioAmbienteCptm,
+        source.serverId,
+        source.formData?.pkCdMeioAmbienteCptm
+    ].map(value => String(value || '')).filter(Boolean)
+}
+
+function recordMatchesAnyKey(record, keys) {
+    if (!record || !keys.length) return false
+
+    const recordKeys = [
+        record.localId,
+        record.id,
+        record.pkCdMeioAmbienteCptm,
+        record.serverId,
+        record.formData?.pkCdMeioAmbienteCptm
+    ].map(value => String(value || '')).filter(Boolean)
+
+    return recordKeys.some(key => keys.includes(key))
+}
+
+async function getFullLocalInspection(source) {
+    const keys = getRecordKeys(source)
+    if (!keys.length) return typeof source === 'object' ? source : null
+
+    for (const key of keys) {
+        const direct = await getInspection(key)
+        if (direct) return direct
+    }
+
+    const all = await getAllInspections()
+    const found = (all || []).find(item => recordMatchesAnyKey(item, keys))
+    if (found) return found
+
+    return typeof source === 'object' && source?.formData ? source : null
+}
+
+export async function enviarRascunho(source, { onQueued, attemptSend = true } = {}) {
+    const keys = getRecordKeys(source)
+    console.log('[3 pontos] localId', keys[0] || '')
+    console.log('[3 pontos] chaves candidatas', keys)
+
+    const record = await getFullLocalInspection(source)
+    console.log('[3 pontos] registro completo IndexedDB', record)
+
+    if (!record) return null
+
+    console.log('[3 pontos] status antes', record.syncStatus)
+
+    const normalized = normalizeLocalEfluenteRecord(record)
+    normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
+    normalized.status = 'Aguardando Envio'
+    normalized.lastError = null
+    normalized.updatedAt = new Date().toISOString()
+
+    console.log('[3 pontos] status depois', normalized.syncStatus)
+
+    const saved = await saveInspection(normalized)
+    if (typeof onQueued === 'function') onQueued(saved)
+
+    if (!attemptSend) return saved
+
+    console.log('[3 pontos] chamando sendInspectionNow forceSend=true')
+    return sendInspectionNow(saved, { forceSend: true })
+}
+
+export async function sendInspectionNow(record, { forceSend = false } = {}) {
     const normalized = normalizeLocalEfluenteRecord(record)
     if (!normalized) return record
 
     if (normalized.syncStatus === SYNC_STATUS.SENT) return normalized
+    if (normalized.syncStatus === SYNC_STATUS.DRAFT && !forceSend) return normalized
 
     normalized.syncStatus = SYNC_STATUS.PENDING_SYNC
     normalized.status = 'Aguardando Envio'
@@ -47,13 +123,15 @@ export async function sendInspectionNow(record) {
     await saveInspection(normalized)
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        normalized.lastError = 'Sem conexao. O registro ficara aguardando envio e sera reenviado automaticamente.'
+        normalized.lastError = null
         await saveInspection(normalized)
         return normalized
     }
 
     const token = getToken()
     if (!token) {
+        normalized.syncStatus = SYNC_STATUS.ERROR
+        normalized.status = 'Erro de Envio'
         normalized.lastError = 'Usuario nao autenticado. Faca login para sincronizar.'
         await saveInspection(normalized)
         return normalized
@@ -62,6 +140,7 @@ export async function sendInspectionNow(record) {
     const validation = validateEfluenteForSubmit(normalized.formData)
     if (!validation.valid) {
         normalized.syncStatus = SYNC_STATUS.ERROR
+        normalized.status = 'Erro de Envio'
         normalized.lastError = validation.errors[0]
         await saveInspection(normalized)
         return normalized
@@ -112,10 +191,12 @@ export async function sendInspectionNow(record) {
             syncStatus: SYNC_STATUS.SENT
         }
     } catch (err) {
-        normalized.syncStatus = isRetryableApiError(err)
+        const temporary = isTemporaryNetworkError(err)
+        normalized.syncStatus = temporary
             ? SYNC_STATUS.PENDING_SYNC
             : SYNC_STATUS.ERROR
-        normalized.lastError = err?.message || 'Erro ao sincronizar'
+        normalized.status = temporary ? 'Aguardando Envio' : 'Erro de Envio'
+        normalized.lastError = temporary ? null : (err?.message || 'Erro ao sincronizar')
         await saveInspection(normalized)
         return normalized
     }
