@@ -57,19 +57,36 @@
               class="field"
               :class="{ wide: field.wide }"
             >
-              <span>{{ field.label }}</span>
+              <div class="field-label-row">
+                <span>{{ field.label }}</span>
+                <FieldHelp :text="field.help" :example="field.example" />
+              </div>
               <textarea
                 v-if="field.type === 'textarea'"
                 v-model="form[field.key]"
                 rows="5"
                 :placeholder="field.placeholder || ''"
+                :disabled="field.readonly"
               />
+              <select
+                v-else-if="field.type === 'select'"
+                v-model="form[field.key]"
+                :disabled="field.readonly"
+              >
+                <option value="">Selecione</option>
+                <option v-for="option in getFieldOptions(field)" :key="option" :value="option">{{ option }}</option>
+              </select>
               <input
                 v-else
                 v-model="form[field.key]"
                 :type="field.type || 'text'"
                 :step="field.step"
+                :min="field.min"
+                :max="field.max"
+                :inputmode="field.inputmode"
                 :placeholder="field.placeholder || ''"
+                :readonly="field.readonly"
+                :disabled="field.readonly"
                 @change="field.location ? updateMapFromInputs() : null"
               />
             </label>
@@ -78,11 +95,29 @@
           <div v-if="activeStep.kind === 'location'" class="location-layout">
             <div class="wizard-grid">
               <label v-for="field in activeStep.fields" :key="field.key" class="field" :class="{ wide: field.wide }">
-                <span>{{ field.label }}</span>
+                <div class="field-label-row">
+                  <span>{{ field.label }}</span>
+                  <FieldHelp :text="field.help" :example="field.example" />
+                </div>
+                <select
+                  v-if="field.type === 'select'"
+                  v-model="form[field.key]"
+                  :disabled="field.readonly"
+                >
+                  <option value="">Selecione</option>
+                  <option v-for="option in getFieldOptions(field)" :key="option" :value="option">{{ option }}</option>
+                </select>
                 <input
+                  v-else
                   v-model="form[field.key]"
                   :type="field.type || 'text'"
                   :step="field.step"
+                  :min="field.min"
+                  :max="field.max"
+                  :inputmode="field.inputmode"
+                  :placeholder="field.placeholder || ''"
+                  :readonly="field.readonly"
+                  :disabled="field.readonly"
                   @change="field.location ? updateMapFromInputs() : null"
                 />
               </label>
@@ -97,6 +132,15 @@
           </div>
 
           <div v-if="activeStep.kind === 'attachments'" class="attachments-layout">
+            <div class="photo-help-grid">
+              <article v-for="field in photoHelpFields" :key="field.label" class="photo-help-card">
+                <div class="field-label-row">
+                  <span>{{ field.label }}</span>
+                  <FieldHelp :text="field.help" :example="field.example" />
+                </div>
+              </article>
+            </div>
+
             <div
               class="upload-panel"
               :class="{ dragging: isDraggingFiles }"
@@ -266,6 +310,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import logo from '../assets/cptm_logo_simples.png'
 import AppLayout from './ui/AppLayout.vue'
 import EmptyState from './ui/EmptyState.vue'
+import FieldHelp from './ui/FieldHelp.vue'
 import Header from './ui/Header.vue'
 import MobileStepHeader from './ui/MobileStepHeader.vue'
 import PageContainer from './ui/PageContainer.vue'
@@ -363,109 +408,114 @@ const FIXED_FIELDS_FROM_LAST_INSPECTION = [
 const emptyForm = createEmptyEfluenteFormData()
 const form = reactive(createEmptyEfluenteFormData())
 
-const identificationFields = [
-  { key: 'txNrElementoMonitoramento', label: 'Numero do Elemento de Monitoramento' },
-  { key: 'txNmElementoMonitoramento', label: 'Nome do Elemento de Monitoramento' },
-  { key: 'txSiglaDeptoMeioAmbiente', label: 'Departamento Meio Ambiente' },
-  { key: 'txStatusDoDesvioAmbiental', label: 'Status do Desvio Ambiental' },
-  { key: 'txStatusDoRegistroNoBd', label: 'Status do Registro no Sistema Central' }
+const siglaMeioAmbienteOptions = ['GEA.DEAE']
+const areaGestoraOptions = ['DEPTO. DE MANUT. DE SISTEMAS ELETR. E RESTAB. DE SERVICOS']
+const naturezaOptions = ['Emissões Atmosféricas', 'Efluentes', 'Resíduos', 'Ruído', 'Outro(a)(s)']
+const municipioOptions = ['Campo Limpo Paulista', 'São Paulo', 'Jundiaí', 'Francisco Morato', 'Ferraz de Vasconcelos']
+const linhaOptions = ['Linha 07 - Rubi', 'Linha 10 - Turquesa', 'Linha 11 - Coral', 'Linha 12 - Safira', 'Linha 13 - Jade']
+const estacaoOptions = ['Estação Jardim Helena - Vila Mara', 'Estação Brás', 'Estação Luz', 'Estação Jundiaí', 'Estação Ferraz de Vasconcelos']
+const viaOptions = ['Via 03E - Trecho 2', 'Via 01', 'Via 02', 'Via 03', 'Via 04']
+const trechoOptions = ['Estação Antônio Gianetti Neto - Estação Ferraz de Vasconcelos']
+const outroOptions = ['Outro(a)(s)']
+const atividadeCptmOptions = ['Empreendimento/Obra', 'Operação', 'Manutenção', 'Outro(a)(s)']
+const edificacaoOptions = ['Estação', 'Pátio', 'Via permanente', 'Subestação', 'Outro(a)(s)']
+const origemOptions = ['Industrial', 'Sanitário', 'Pluvial', 'Outro(a)(s)']
+const fonteGeradoraOptions = ['Banheiro químico', 'Caixa separadora', 'Lavagem de peças', 'Outro(a)(s)']
+const destinacaoOptions = ['Interligação em rede coletora', 'Coleta e transporte externo', 'Tratamento interno', 'Outro(a)(s)']
+const veiculoOptions = ['Caminhão', 'Caminhão tanque', 'Outro(a)(s)']
+
+const institutionalFields = [
+  { key: 'txNomePjDaContratada', label: 'Nome (Pesso Jurídica) da Contratada', help: 'Inserir o nome e sigla da Contratada. Separar nome e sigla por " - ". A sigla pode conter até 10 caracteres, maiúsculos e sem espaços.', example: 'Companhia Paulista de Trens Metropolitanos S.A. - CPTM', wide: true },
+  { key: 'txNrContratoContratada', label: 'Nº do Contrato (da Contratada)', help: 'Inserir o identificador do contrato da Contratada, se aplicável. Padrão: Número/Código com até 12 caracteres e sem espaços.', example: 'AR01234-56' },
+  { key: 'txNmLocalEscopoContratual', label: 'Local do Escopo Contratual (Pseudônimo)', help: 'Indicar um nome genérico para o local do escopo contratual ou área/trecho da CPTM.', example: 'Pátio Capuava' },
+  { key: 'txNomePfDaRepresentante', label: 'Representante (PF) da Contratada e/ou Área Gestora da CPTM', help: 'Inserir o nome do responsável interlocutor da Contratada e/ou da Área Gestora da CPTM para assuntos de meio ambiente, utilizando no máximo 89 caracteres.', example: 'Pessoa 1 / Pessoa 2', wide: true },
+  { key: 'txSiglaDeptoMeioAmbiente', label: 'Sigla da Área de Meio Ambiente', type: 'select', options: siglaMeioAmbienteOptions, help: 'Escolher a sigla do departamento interlocutor da Gerência de Meio Ambiente - GEA. Utilizar menu suspenso.', example: 'GEA.DEAE' },
+  { key: 'txNmAreaGestoraCptm', label: 'Nome da Área Gestora CPTM', type: 'select', options: areaGestoraOptions, help: 'Escolher área gestora da CPTM, se aplicável. Utilizar menu suspenso.', example: 'DEPTO. DE MANUT. DE SISTEMAS ELETR. E RESTAB. DE SERVICOS', wide: true },
+  { key: 'txIdAreaGestoraCptm', label: 'Indentificador da Área Gestora CPTM', help: 'Campo Automático', example: 'ID.10-15-5-3-0000', readonly: true },
+  { key: 'txSiglaAreaGestoraCptm', label: 'Sigla da Área Gestora CPTM', help: 'Campo Automático', example: 'DO.GOT.DOTV.1000', readonly: true },
+  { key: 'txNomePjDaSupervisora', label: 'Nome (PJ) da Supervisora Ambiental', help: 'Inserir o nome e sigla da Supervisora Ambiental, utilizando no máximo 89 caracteres. Quando a Supervisora for a própria CPTM repetir a gerência e departamento ambiental informados anteriormente.', example: 'Empresa de Supervisão Ambiental Ltda. - ESA', wide: true }
+]
+
+const cadastrerFields = [
+  { key: 'txAutorPfDoCadastro', label: 'Autor(a) (PF) do Cadastramento', help: 'Inserir o nome completo da pessoa que realizou o cadastramento da informação.', example: 'Nome e Sobrenome - Pessoa 4', wide: true },
+  { key: 'txNmResponsavelCadastro', label: 'Responsável Técnico - RT pelo Cadastramento', help: 'Inserir o nome completo do(a) responsável técnico(a) pelo cadastramento/caracterização da informação.', example: 'Nome e Sobrenome - Pessoa 5', wide: true },
+  { key: 'txRpResponsavelCadastro', label: 'Registro Profissional (do RT)', help: 'Inserir o registro profissional do(a) responsável técnico(a) pelo cadastramento/caracterização da informação.', example: 'CREA - 123456 - Pessoa 5' },
+  { key: 'txDrtResponsavelCadastro', label: 'Documento de Responsabilidade Técnica (do RT)', help: 'Inserir o documento de responsabilidade técnica do(a) responsável técnico(a) pela realização do trabalho.', example: 'ART nº 123456 - Pessoa 5' }
+]
+
+const formIdentificationFields = [
+  { key: 'txNaturezaDoPga', label: 'Natureza (do PGA)', type: 'select', options: naturezaOptions, help: 'Escolher a Natureza correspondente. Utilizar menu suspenso.', example: 'Emissões Atmosféricas' },
+  { key: 'txTipoDeFormulario', label: 'Tipo de Formulário', help: 'Campo Automático', example: 'Formulário de Cadastramento - FDC (FDC-EEA.EF)', readonly: true },
+  { key: 'dtDataEmissaoFormulario', label: 'Data de Emissão do Formulário', type: 'date', help: 'Inserir a data de emissão do documento. Padrão: dd/mm/aaaa.', example: '01/01/2001' },
+  { key: 'nrNumeroDeFormulario', label: 'Número do Formulário', type: 'number', min: 1, max: 999999, inputmode: 'numeric', help: 'Inserir o número de identificação do formulário. Escolher de 1 a 999.999. Digitar apenas números. O número deve ser sequencial, não replicável e com seis unidades. Exibição final: Nº 000001.', example: '1' },
+  { key: 'txAutorPfDoFormulario', label: 'Autor(a) (Pessoa Física) do Formulário', help: 'Definir Explicação', example: 'Pessoa 5' },
+  { key: 'txNmArquivoFdcRelacionado', label: 'Nome do arquivo FDC relacionado', help: 'Campo Automático', example: 'DeaoCtAr01823-02FdcEeaEfL10ProgaiaN000001', readonly: true, wide: true },
+  { key: 'pkCdArquivoFdcRelacionado', label: 'Código do arquivo FDC relacionoda', help: 'Campo Automático', example: 'FDC-EEA.EF-A.2026-L.07-CPTM-N.000001', readonly: true, wide: true }
+]
+
+const registrationDateTimeFields = [
+  { key: 'dtDataDoCadastramento', label: 'Data do Cadastramento', type: 'date', help: 'Inserir a data do cadastramanento da informação. Padrão: dd/mm/aaaa.', example: '01/01/2001' },
+  { key: 'hrHoraDoCadastramento', label: 'Hora do Cadastramento', type: 'time', help: 'Inserir a hora do cadastramanento da informação. Padrão: hh:mm.', example: '09:00' }
+]
+
+const monitoredElementFields = [
+  { key: 'pkCdMeioAmbienteCptm', label: 'Chave Primária - Meio Ambiente', help: 'Campo Automático', example: 'EEA.EF-A.2026-L.07-CPTM-N.000001', readonly: true, wide: true },
+  { key: 'txNrElementoMonitoramento', label: 'Elemento de Monitoramento - Número', type: 'number', min: 1, max: 999999, inputmode: 'numeric', help: 'Inserir o número do elemento monitorado. Escolher de 1 a 999.999. Digitar apenas números. O número deve ser sequencial, não replicável e com seis unidades. Exibição final: N.000001.', example: '1' },
+  { key: 'txNmElementoMonitoramento', label: 'Elemento de Monitoramento - Nome', help: 'Indicar um nome genérico para o elemento de monitoramento.', example: 'Plataforma 1' }
 ]
 
 const locationFields = [
-  { key: 'txMunicipio', label: 'Municipio' },
-  { key: 'txLinhaCptm', label: 'Linha CPTM' },
-  { key: 'txViaCptm', label: 'Via CPTM' },
-  { key: 'txTrechoESentidoCptm', label: 'Trecho e Sentido CPTM' },
-  { key: 'txKmPoste', label: 'KM/Poste' },
-  { key: 'txEstacaoCptm', label: 'Estacao CPTM' },
-  { key: 'nrLatGrauDecimalWgs84', label: 'Latitude WGS84', type: 'number', step: 'any', location: true },
-  { key: 'nrLongGrauDecimalWgs84', label: 'Longitude WGS84', type: 'number', step: 'any', location: true },
-  { key: 'nrLatMetrosSirgas2000', label: 'Latitude SIRGAS2000', type: 'number', step: 'any' },
-  { key: 'nrLongMetrosSirgas2000', label: 'Longitude SIRGAS2000', type: 'number', step: 'any' },
-  { key: 'txNmLocalEscopoContratual', label: 'Local do Escopo Contratual', wide: true }
+  { key: 'txMunicipio', label: 'Nome de Município', type: 'select', options: municipioOptions, help: 'Selecionar o município no qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Campo Limpo Paulista' },
+  { key: 'txLinhaCptm', label: 'Nome da Linha CPTM', type: 'select', options: linhaOptions, help: 'Escolher o número da Linha. Utilizar menu suspenso.', example: 'Linha 07 - Rubi' },
+  { key: 'txEstacaoCptm', label: 'Nome da Estação CPTM', type: 'select', options: estacaoOptions, help: 'Selecionar o nome da estação na qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Estação Jardim Helena - Vila Mara' },
+  { key: 'txViaCptm', label: 'Número da Via da Linha CPTM', type: 'select', options: viaOptions, help: 'Selecionar a via na qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Via 03E - Trecho 2' },
+  { key: 'txTrechoESentidoCptm', label: 'Trecho e Sentido da Linha CPTM', type: 'select', options: trechoOptions, help: 'Selecionar o trecho e sentido da via na qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Estação Antônio Gianetti Neto - Estação Ferraz de Vasconcelos', wide: true },
+  { key: 'txKmPoste', label: 'Número do Quilômetro e Poste', help: 'Inserir o Km/Poste mais próximo do elemento de monitoramento vistoriado, se aplicável. Padrão: "00/00" ou "000/000".', example: '51/02' },
+  { key: 'nrLatGrauDecimalWgs84', label: 'Latitude em Graus (Datum: WGS84)', type: 'number', step: 'any', location: true, help: 'Definir Explicação', example: '-23.123456' },
+  { key: 'nrLongGrauDecimalWgs84', label: 'Longitude em Graus (Datum: WGS84)', type: 'number', step: 'any', location: true, help: 'Definir Explicação', example: '-46.123456' }
 ]
 
-const formFields = [
-  { key: 'txTipoDeFormulario', label: 'Tipo de Formulario' },
-  { key: 'dtDataEmissaoFormulario', label: 'Data de Emissao', type: 'date' },
-  { key: 'nrNumeroDeFormulario', label: 'Numero do Formulario', type: 'number' },
-  { key: 'txAutorPfDoFormulario', label: 'Autor PF do Formulario' },
-  { key: 'txNaturezaDoPga', label: 'Natureza do PGA' },
-  { key: 'txNomePjExecutora', label: 'Nome PJ Executora' }
+const environmentalRegulationFields = [
+  { key: 'txTipoAtividadeListada', label: 'Tipo de Atividade (Listada)', type: 'select', options: outroOptions, help: 'Selecionar o tipo de atividade relacionada ao elemento de monitoramento. Utilizar lista suspensa.', example: 'Outro(a)(s)' },
+  { key: 'txTipoAtividadeNListada', label: 'Tipo de Atividade (Não Listada)', help: 'Inserir o tipo de atividade não listada quando "Tipo de Atividade (Listada)" for "Outro(a)(s)".', example: 'Transporte' },
+  { key: 'txTipoDraListado', label: 'Tipo de DRA (Listado)', type: 'select', options: outroOptions, help: 'Selecionar o tipo de DRA relacionado ao elemento de monitoramento. Utilizar lista suspensa.', example: 'Outro(a)(s)' },
+  { key: 'txTipoDraNListado', label: 'Tipo de DRA (Não Listado)', help: 'Inserir o tipo de DRA não listado quando "Tipo de DRA (Listado)" for "Outro(a)(s)".', example: 'Teste' },
+  { key: 'txIdDra', label: 'Código Identificador do DRA', help: 'Inserir o código identificador do DRA.', example: 'DRF nº 123.456' },
+  { key: 'dtValidadeDra', label: 'Data de Validade do DRA', type: 'date', help: 'Inserir a data de validade do DRA. Padrão: dd/mm/aaaa.', example: '01/01/2001' }
 ]
 
-const activityFields = [
-  { key: 'txTipoAtividadeListada', label: 'Tipo de Atividade Listada' },
-  { key: 'txTipoAtividadeNListada', label: 'Tipo de Atividade Nao Listada' },
-  { key: 'txTipoDraListado', label: 'Tipo DRA Listado' },
-  { key: 'txTipoDraNListado', label: 'Tipo DRA Nao Listado' },
-  { key: 'txIdDra', label: 'ID DRA' },
-  { key: 'dtValidadeDra', label: 'Validade DRA', type: 'date' },
-  { key: 'txAnaliseCptmAprovacao', label: 'Analise CPTM Aprovacao' },
-  { key: 'txTipoAtividadeCptm', label: 'Tipo Atividade CPTM' },
-  { key: 'txNmLocalAtiv', label: 'Nome Local Atividade' },
-  { key: 'txNmLocalAtivComplemento', label: 'Complemento Local Atividade', wide: true }
+const detailFields = [
+  { key: 'txTipoAtividadeCptm', label: 'Tipo de Atividade na CPTM', type: 'select', options: atividadeCptmOptions, help: 'Selecionar o tipo de atividade na CPTM. Utilizar lista suspensa.', example: 'Empreendimento/Obra' },
+  { key: 'txNmLocalAtiv', label: 'Nome Edificação/Local da CPTM', type: 'select', options: edificacaoOptions, help: 'Selecionar o nome da edificação/local da CPTM. Utilizar lista suspensa.', example: 'Estação' },
+  { key: 'txNmLocalAtivComplemento', label: 'Nome Edificação/Local (Complemento)', help: 'Inserir o complemento do nome da edificação/local na CPTM.', example: 'Brás' },
+  { key: 'txOrigemEfluente', label: 'Origem do Efluente', type: 'select', options: origemOptions, help: 'Selecionar a origem do efluente. Utilizar lista suspensa.', example: 'Industrial' },
+  { key: 'txFonteGeradora', label: 'Fonte Geradora do Efluente', type: 'select', options: fonteGeradoraOptions, help: 'Selecionar a fonte geradora do efluente. Utilizar lista suspensa.', example: 'Banheiro químico' },
+  { key: 'nrQuantidadeL', label: 'Quantidade (Litros)', type: 'number', step: 'any', help: 'Inserir a quantidade em litros de efluente. Padrão: número com até 8 casas decimais.', example: '9,25' },
+  { key: 'txTipoDestinacao', label: 'Tipo de Destinação do Efluente', type: 'select', options: destinacaoOptions, help: 'Selecionar o tipo de destinação do efluente. Utilizar lista suspensa.', example: 'Interligação em rede coletora' },
+  { key: 'txTipoVeiculo', label: 'Tipo de Veículo', type: 'select', options: veiculoOptions, help: 'Selecionar o tipo de veículo transportador do efluente. Utilizar lista suspensa.', example: 'Caminhão' },
+  { key: 'txIdVeiculo', label: 'Identificador/Placa do Veículo', help: 'Inserir identificador/placa do veículo transportador do efluente.', example: 'WAD 105D' },
+  { key: 'txIdGuiaRemessa', label: 'Código Identificador da Guia de Remessa', help: 'Inserir o código identificador da guia de remessa.', example: 'ID nº 10.456' },
+  { key: 'nrDistanciaDaViaM', label: 'Distância da Via CPTM (Metros)', type: 'number', step: 'any', help: 'Inserir a distância da via mais próxima em relação ao efluente, utilizando número decimal em metros.', example: '7,58' },
+  { key: 'txObsCadastramento', label: 'Obsevações Gerais: Cadastramento', type: 'textarea', help: 'Inserir observações relavantes, relativas ao cadastramento/caracterização, se necessário. Utilizar no máximo 255 caracteres.', wide: true }
 ]
 
-const effluentFields = [
-  { key: 'txOrigemEfluente', label: 'Origem do Efluente' },
-  { key: 'txFonteGeradora', label: 'Fonte Geradora' },
-  { key: 'nrQuantidadeL', label: 'Quantidade em Litros', type: 'number', step: 'any' },
-  { key: 'txTipoDestinacao', label: 'Tipo de Destinacao' },
-  { key: 'txTipoVeiculo', label: 'Tipo de Veiculo' },
-  { key: 'txIdVeiculo', label: 'ID do Veiculo' },
-  { key: 'txIdGuiaRemessa', label: 'ID Guia de Remessa' },
-  { key: 'nrDistanciaDaViaM', label: 'Distancia da Via em Metros', type: 'number', step: 'any' },
-  { key: 'txOfereceRiscoSistemaCptm', label: 'Oferece Risco ao Sistema CPTM' },
-  { key: 'txProprietario', label: 'Proprietario' },
-  { key: 'txObsCadastramento', label: 'Observacoes do Cadastramento', type: 'textarea', wide: true }
-]
-
-const registrationFields = [
-  { key: 'dtDataDoCadastramento', label: 'Data do Cadastramento', type: 'date' },
-  { key: 'hrHoraDoCadastramento', label: 'Hora do Cadastramento', type: 'time' },
-  { key: 'txAutorPjDoCadastro', label: 'Autor PJ do Cadastro' },
-  { key: 'txAutorPfDoCadastro', label: 'Autor PF do Cadastro' },
-  { key: 'txNmResponsavelCadastro', label: 'Nome Responsavel Cadastro' },
-  { key: 'txRpResponsavelCadastro', label: 'RP Responsavel Cadastro' },
-  { key: 'txDrtResponsavelCadastro', label: 'DRT Responsavel Cadastro' }
-]
-
-const contractorFields = [
-  { key: 'txNomePjDaContratada', label: 'Nome PJ da Contratada' },
-  { key: 'txNrContratoContratada', label: 'Numero Contrato Contratada' },
-  { key: 'txNmAreaGestoraCptm', label: 'Nome Area Gestora CPTM' },
-  { key: 'txIdAreaGestoraCptm', label: 'ID Area Gestora CPTM' },
-  { key: 'txSiglaAreaGestoraCptm', label: 'Sigla Area Gestora CPTM' },
-  { key: 'txNomePfDaRepresentante', label: 'Nome PF Representante' },
-  { key: 'txNomePjDaSupervisora', label: 'Nome PJ Supervisora' },
-  { key: 'txNrContratoSupervisora', label: 'Numero Contrato Supervisora' }
-]
-
-const relatedFileFields = [
-  { key: 'txNmArquivoFdcRelacionado', label: 'Nome Arquivo FDC Relacionado' },
-  { key: 'pkCdArquivoFdcRelacionado', label: 'Codigo Arquivo FDC Relacionado' },
-  { key: 'txNmArquivoRvtRelacionado', label: 'Nome Arquivo RVT Relacionado' },
-  { key: 'pkCdElementoDeMonitorRvt', label: 'Codigo Elemento Monitor RVT' },
-  { key: 'txNmArquivoDacRelacionado', label: 'Nome Arquivo DAC Relacionado' },
-  { key: 'pkCdElementoDeMonitorDac', label: 'Codigo Elemento Monitor DAC' },
-  { key: 'txNmArquivoCncRelacionado', label: 'Nome Arquivo CNC Relacionado' },
-  { key: 'pkCdElementoDeMonitorCnc', label: 'Codigo Elemento Monitor CNC' },
-  { key: 'pkCdCodigoNoUltimoRra', label: 'Codigo Ultimo RRA' },
-  { key: 'pkCdCedoc', label: 'Codigo CEDOC' }
-]
+const photoHelpFields = ['Fotografia 1', 'Fotografia 2', 'Fotografia 3', 'Fotografia 4'].map(label => ({
+  label,
+  help: 'Inserir Foto. Tamanho: 3x4. Posição e Orientação: Paisagem/Horizontal.',
+  example: ''
+}))
 
 const steps = [
-  { title: 'Identificacao', description: 'Codigo, elemento e status', kind: 'fields', fields: identificationFields },
-  { title: 'Localizacao', description: 'Trecho CPTM e coordenadas', kind: 'location', fields: locationFields },
-  { title: 'Formulario', description: 'Dados do formulario e responsaveis', kind: 'fields', fields: formFields },
-  { title: 'Atividade e DRA', description: 'Dados da atividade ambiental', kind: 'fields', fields: activityFields },
-  { title: 'Efluente', description: 'Origem, volume e destinacao', kind: 'fields', fields: effluentFields },
-  { title: 'Cadastro', description: 'Autores e responsavel pelo cadastro', kind: 'fields', fields: registrationFields },
-  { title: 'Contratada e area', description: 'Contratos, supervisora e area gestora', kind: 'fields', fields: contractorFields },
-  { title: 'Arquivos relacionados', description: 'Referencias FDC, RVT, DAC, CNC e CEDOC', kind: 'fields', fields: relatedFileFields },
-  { title: 'Anexos/Fotos', description: 'Imagens, documentos e anexos existentes', kind: 'attachments', badge: 'Upload' },
-  { title: 'Revisao e envio', description: 'Conferencia antes de enviar ao sistema central', kind: 'review', badge: 'Resumo' }
+  { title: 'Premíssas Institucionais / Cabeçalho', description: 'Dados institucionais, contratada, supervisora e área gestora', kind: 'fields', fields: institutionalFields },
+  { title: 'Identificação do Cadastrador e Responsável Técnico', description: 'Autor do cadastramento e responsável técnico', kind: 'fields', fields: cadastrerFields },
+  { title: 'Identificação do Formulário', description: 'Natureza, formulário e arquivo FDC relacionado', kind: 'fields', fields: formIdentificationFields },
+  { title: 'Data e Hora do Cadastro do E.M.', description: 'Momento do cadastramento da informação', kind: 'fields', fields: registrationDateTimeFields },
+  { title: 'Identificação do E.M.', description: 'Chave primária, número e nome do elemento monitorado', kind: 'fields', fields: monitoredElementFields },
+  { title: 'Localização do E.M.', description: 'Município, linha, estação, via, trecho e coordenadas', kind: 'location', fields: locationFields },
+  { title: '7.1. Regulamentação Ambiental', description: 'Atividade, DRA e validade', kind: 'fields', fields: environmentalRegulationFields },
+  { title: '7.2. Detalhamento', description: 'Atividade CPTM, origem, volume, destinação e observações', kind: 'fields', fields: detailFields },
+  { title: '7.3. Registro Fotográfico', description: 'Fotografias e anexos do efluente', kind: 'attachments', badge: 'Fotos' },
+  { title: 'Revisão e envio', description: 'Conferência antes de enviar ao sistema central', kind: 'review', badge: 'Resumo' }
 ]
 
 const activeStep = computed(() => steps[currentStep.value])
@@ -489,12 +539,23 @@ const documentFiles = computed(() => selectedFiles.value
   .map((file, index) => ({ file, index, key: file.id || `${file.name}-${index}` }))
   .filter(item => !item.file.type?.startsWith('image/')))
 const reviewGroups = computed(() => [
-  { title: 'Dados principais', fields: identificationFields },
-  { title: 'Localizacao', fields: locationFields.slice(0, 9) },
-  { title: 'Dados do efluente', fields: effluentFields },
-  { title: 'Responsaveis', fields: registrationFields },
-  { title: 'Contratada e area gestora', fields: contractorFields }
+  { title: 'Premíssas Institucionais / Cabeçalho', fields: institutionalFields },
+  { title: 'Identificação do Cadastrador e Responsável Técnico', fields: cadastrerFields },
+  { title: 'Identificação do Formulário', fields: formIdentificationFields },
+  { title: 'Data e Hora do Cadastro do E.M.', fields: registrationDateTimeFields },
+  { title: 'Identificação do E.M.', fields: monitoredElementFields },
+  { title: 'Localização do E.M.', fields: locationFields },
+  { title: '7.1. Regulamentação Ambiental', fields: environmentalRegulationFields },
+  { title: '7.2. Detalhamento', fields: detailFields }
 ])
+
+function getFieldOptions(field) {
+  const options = Array.isArray(field?.options) ? field.options : []
+  const currentValue = form[field?.key]
+
+  if (!currentValue || options.includes(currentValue)) return options
+  return [currentValue, ...options]
+}
 
 watch(currentStep, async () => {
   if (activeStep.value.kind !== 'attachments') closeCamera({ silent: true })
@@ -1458,6 +1519,27 @@ function returnToMain() {
   grid-column: 1 / -1;
 }
 
+.field-label-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.field-label-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.field input:disabled,
+.field select:disabled,
+.field textarea:disabled {
+  background: var(--gray-100);
+  color: var(--gray-500);
+  cursor: not-allowed;
+}
+
 .location-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
@@ -1508,6 +1590,20 @@ function returnToMain() {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+}
+
+.photo-help-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.photo-help-card {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--white);
+  padding: 10px;
 }
 
 .upload-panel,
@@ -1815,7 +1911,8 @@ function returnToMain() {
 
   .wizard-grid,
   .attachments-layout,
-  .review-layout {
+  .review-layout,
+  .photo-help-grid {
     grid-template-columns: 1fr;
   }
 
