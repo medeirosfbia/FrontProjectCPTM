@@ -1,7 +1,10 @@
 <template>
     <div class="container">
         <div class="admin-screen">
-                <div v-if="toastVisible" :class="['toast', toastType]">{{ toastMessage }}</div>
+                <div v-if="toastVisible" :class="['toast', toastType]">
+                    <strong v-if="toastTitle">{{ toastTitle }}</strong>
+                    <span>{{ toastMessage }}</span>
+                </div>
             <div class="user-header">
                 <div class="header-left">
                     <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
@@ -27,6 +30,9 @@
                 <button class="tab-btn" :class="{ active: currentTab === 'my-inspections' }"
                     @click="setTab('my-inspections')">
                     Meus Registros
+                </button>
+                <button class="tab-btn" @click="openMap">
+                    Mapa
                 </button>
             </div>
 
@@ -231,6 +237,7 @@ import { storeToRefs } from 'pinia'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
 import { deleteEfluenteAPI } from '../services/api'
 import { cleanupSentLocalInspections, enviarRascunho, sendInspectionNow } from '../services/sync'
+import { consumeQueuedToast } from '../services/toastQueue'
 import { extractEfluenteItems, getAdminUsuarioEfluentesAPI, getMeusEfluentesAPI, getUsuariosAPI, criarUsuarioAPI, updateUsuarioAPI, deletarUsuarioAPI } from '../services/api'
 import {
     getEfluenteCardSubtitle,
@@ -599,9 +606,11 @@ const loadingApi = ref(false)
 const sentApiData = ref([])
 
 // Toast
+const toastTitle = ref('')
 const toastMessage = ref('')
 const toastType = ref('')
 const toastVisible = ref(false)
+let toastTimer = null
 
 const adminDashboardStats = computed(() => {
     const local = inspections.value || []
@@ -620,10 +629,28 @@ const adminDashboardStats = computed(() => {
 })
 
 function showToast(msg, type = 'success', duration = 3000) {
-    toastMessage.value = msg
-    toastType.value = type
+    const payload = typeof msg === 'object' && msg !== null ? msg : { message: msg, type, duration }
+
+    if (toastTimer) {
+        clearTimeout(toastTimer)
+        toastTimer = null
+    }
+
+    toastTitle.value = payload.title || ''
+    toastMessage.value = payload.message || ''
+    toastType.value = payload.type || type
     toastVisible.value = true
-    setTimeout(() => { toastVisible.value = false }, duration)
+    toastTimer = setTimeout(() => {
+        toastVisible.value = false
+        toastTitle.value = ''
+        toastTimer = null
+    }, payload.duration || duration)
+}
+
+function showQueuedToast() {
+    const queued = consumeQueuedToast()
+    if (!queued) return
+    showToast(queued, queued.type, queued.duration)
 }
 
 function getInitialFilter() {
@@ -651,6 +678,7 @@ onMounted(async () => {
 
     // Carrega do sistema central e renderiza junto com os rascunhos locais.
     await setFilter(getInitialFilter())
+    showQueuedToast()
 
     if (typeof window !== 'undefined') {
         window.addEventListener('inspections-synced', handleSyncUpdated)
@@ -755,6 +783,10 @@ async function setFilter(key) {
 
 function openNewInspection() {
     router.push('/form/new')
+}
+
+function openMap() {
+    router.push('/map')
 }
 
 function goToForm(ins) {
@@ -1034,6 +1066,12 @@ function cancelModal() {
     color: #fff;
     font-weight: 700;
     box-shadow: 0 6px 18px rgba(16,24,40,0.12);
+    display: grid;
+    gap: 0.15rem;
+    max-width: min(420px, calc(100vw - 40px));
+}
+.toast span {
+    font-weight: 600;
 }
 .toast.success { background: #16a34a }
 .toast.warning { background: #ca8a04 }

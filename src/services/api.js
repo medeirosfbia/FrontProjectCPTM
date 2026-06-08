@@ -265,6 +265,16 @@ function buildEfluenteListQuery(params = {}) {
   })
 }
 
+function buildEfluenteMapQuery(params = {}) {
+  return buildQuery({
+    municipio: params.municipio,
+    linha: params.linha ?? params.linhaCptm,
+    status: params.status,
+    dataInicio: params.dataInicio,
+    dataFim: params.dataFim
+  })
+}
+
 function normalizeEfluenteListResponse(res) {
   if (Array.isArray(res)) return res.map(normalizeApiEfluenteListItem)
   if (Array.isArray(res?.items)) return { ...res, items: res.items.map(normalizeApiEfluenteListItem) }
@@ -395,6 +405,10 @@ export async function getAdminEfluentesAPI(params = {}) {
   return getEfluentesFromPath('/admin/efluentes', params)
 }
 
+export async function getEfluentesMapaAPI(params = {}) {
+  return apiFetch(`/efluentes/mapa${buildEfluenteMapQuery(params)}`, { method: 'GET' })
+}
+
 export async function getAdminUsuarioEfluentesAPI(usuarioId, params = {}) {
   if (usuarioId === undefined || usuarioId === null || usuarioId === '') {
     throw new Error('usuarioId obrigatorio')
@@ -518,6 +532,7 @@ export default {
   getEfluentesAPI,
   getMeusEfluentesAPI,
   getAdminEfluentesAPI,
+  getEfluentesMapaAPI,
   getAdminUsuarioEfluentesAPI,
   getEfluenteByPkAPI,
   updateEfluenteAPI,

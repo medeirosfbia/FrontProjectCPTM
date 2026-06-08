@@ -18,7 +18,7 @@
         @open-steps="showStepSheet = true"
       />
 
-      <form class="wizard-shell" @submit.prevent="submitForm">
+      <form class="wizard-shell" @submit.prevent="handleSubmitEfluente">
         <aside class="wizard-sidebar">
           <StepperResponsivo
             :steps="steps"
@@ -132,13 +132,8 @@
           </div>
 
           <div v-if="activeStep.kind === 'attachments'" class="attachments-layout">
-            <div class="photo-help-grid">
-              <article v-for="field in photoHelpFields" :key="field.label" class="photo-help-card">
-                <div class="field-label-row">
-                  <span>{{ field.label }}</span>
-                  <FieldHelp :text="field.help" :example="field.example" />
-                </div>
-              </article>
+            <div class="photo-help-inline">
+              <FieldHelp text="Inserir Foto. Tamanho: 3x4. Posição e Orientação: Paisagem/Horizontal." />
             </div>
 
             <div
@@ -295,6 +290,20 @@
         @close="showStepSheet = false"
         @go-to-step="goToStep"
       />
+
+      <div v-if="draftLeaveModalVisible" class="modal-overlay" role="dialog" aria-modal="true">
+        <div class="modal">
+          <h3>Salvar como rascunho?</h3>
+          <p>Deseja salvar este efluente como rascunho antes de sair?</p>
+          <div class="modal-actions">
+            <button type="button" class="btn ghost" :disabled="saving" @click="resolveDraftLeave('cancel')">Cancelar</button>
+            <button type="button" class="btn" :disabled="saving" @click="resolveDraftLeave('discard')">Não</button>
+            <button type="button" class="btn-primary" :disabled="saving" @click="resolveDraftLeave('save')">
+              {{ saving ? 'Salvando...' : 'Sim, salvar' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </PageContainer>
   </AppLayout>
 </template>
@@ -332,6 +341,7 @@ import {
   updateEfluenteAPI,
   updateEfluenteMultipartAPI
 } from '../services/api'
+import { queueToast } from '../services/toastQueue'
 import {
   attachmentRecordToFile,
   buildEfluentePayload,
@@ -371,6 +381,7 @@ const copyFirstInspectionBusy = ref(false)
 const isCameraOpen = ref(false)
 const isCameraStarting = ref(false)
 const isCameraCapturing = ref(false)
+const draftLeaveModalVisible = ref(false)
 const cameraVideoRef = ref(null)
 const existingAttachments = ref([])
 const attachmentPreviewUrl = ref('')
@@ -382,6 +393,8 @@ let mapRef = null
 let mapMarker = null
 let personMarker = null
 let hasRequestedInitialLocation = false
+let statusTimer = null
+let draftLeaveResolve = null
 
 const FIXED_FIELDS_FROM_LAST_INSPECTION = [
   'txMunicipio',
@@ -499,12 +512,6 @@ const detailFields = [
   { key: 'txObsCadastramento', label: 'Obsevações Gerais: Cadastramento', type: 'textarea', help: 'Inserir observações relavantes, relativas ao cadastramento/caracterização, se necessário. Utilizar no máximo 255 caracteres.', wide: true }
 ]
 
-const photoHelpFields = ['Fotografia 1', 'Fotografia 2', 'Fotografia 3', 'Fotografia 4'].map(label => ({
-  label,
-  help: 'Inserir Foto. Tamanho: 3x4. Posição e Orientação: Paisagem/Horizontal.',
-  example: ''
-}))
-
 const steps = [
   { title: 'Premíssas Institucionais / Cabeçalho', description: 'Dados institucionais, contratada, supervisora e área gestora', kind: 'fields', fields: institutionalFields },
   { title: 'Identificação do Cadastrador e Responsável Técnico', description: 'Autor do cadastramento e responsável técnico', kind: 'fields', fields: cadastrerFields },
@@ -577,17 +584,41 @@ onBeforeUnmount(() => {
   closeCamera({ silent: true })
   clearAttachmentPreview()
   clearSelectedPreviewUrls()
+  clearTransientMessages()
+  resolveDraftLeave('cancel')
   if (mapRef) mapRef.remove()
 })
 
 onBeforeRouteLeave(async () => {
-  await saveDraftBeforeLeaving()
-  return true
+  return saveDraftBeforeLeaving()
 })
 
-function setStatus(message, type = 'info') {
+function setStatus(message, type = 'info', duration = 0) {
+  if (statusTimer) {
+    clearTimeout(statusTimer)
+    statusTimer = null
+  }
+
   status.value = message
   statusType.value = type
+
+  if (message && duration > 0) {
+    statusTimer = setTimeout(() => {
+      status.value = ''
+      statusType.value = 'info'
+      statusTimer = null
+    }, duration)
+  }
+}
+
+function clearTransientMessages() {
+  if (statusTimer) {
+    clearTimeout(statusTimer)
+    statusTimer = null
+  }
+
+  status.value = ''
+  statusType.value = 'info'
 }
 
 async function applyLatestInspectionData() {
@@ -971,7 +1002,7 @@ async function saveDraft(options = {}) {
   const saved = await saveInspection(record)
   localDraftId.value = saved.localId || saved.id
   loadedFromLocal.value = true
-  if (!silent) setStatus('Rascunho salvo localmente.', 'success')
+  if (!silent) setStatus('Rascunho salvo com sucesso.', 'success', 5000)
 
   if (updateRoute && route.params.id === 'new') {
     router.replace(`/form/${encodeURIComponent(localDraftId.value)}`)
@@ -985,12 +1016,19 @@ async function saveDraftAndReturnToDrafts() {
 
   saving.value = true
   try {
-    await saveDraft({ updateRoute: false })
+    await saveDraft({ silent: true, updateRoute: false })
     hasSavedSuccessfully.value = true
-    router.push(getDraftsListRoute())
+    clearTransientMessages()
+    queueToast({
+      type: 'success',
+      title: 'Rascunho salvo',
+      message: 'Seu efluente foi salvo como rascunho e poderá ser continuado posteriormente.',
+      duration: 5000
+    })
+    await router.push(getDraftsListRoute())
   } catch (err) {
     console.error('Erro ao salvar rascunho', err)
-    setStatus(err?.message || 'Nao foi possivel salvar o rascunho.', 'error')
+    setStatus(err?.message || 'Não foi possível salvar o rascunho.', 'error', 6000)
   } finally {
     saving.value = false
   }
@@ -1009,19 +1047,60 @@ async function saveDraftBeforeLeaving() {
   if (saving.value || hasSavedSuccessfully.value) return
   if (!hasDraftableData()) return
 
-  const shouldSave = typeof window !== 'undefined'
-    ? window.confirm('Deseja salvar como rascunho?')
-    : false
-  if (!shouldSave) return
+  const action = await askDraftLeaveAction()
+  if (action === 'cancel') return false
+  if (action === 'discard') {
+    hasSavedSuccessfully.value = true
+    clearTransientMessages()
+    return true
+  }
 
-  await saveDraft({ silent: true, updateRoute: false })
+  saving.value = true
+  try {
+    await saveDraft({ silent: true, updateRoute: false })
+    hasSavedSuccessfully.value = true
+    clearTransientMessages()
+    queueToast({
+      type: 'success',
+      title: 'Rascunho salvo',
+      message: 'Seu efluente foi salvo como rascunho e poderá ser continuado posteriormente.',
+      duration: 5000
+    })
+    return true
+  } catch (err) {
+    console.error('Erro ao salvar rascunho antes de sair', err)
+    setStatus(err?.message || 'Não foi possível salvar o rascunho.', 'error', 6000)
+    return false
+  } finally {
+    saving.value = false
+  }
 }
 
-async function submitForm() {
+function askDraftLeaveAction() {
+  draftLeaveModalVisible.value = true
+  return new Promise(resolve => {
+    draftLeaveResolve = resolve
+  })
+}
+
+function resolveDraftLeave(action) {
+  if (!draftLeaveResolve) {
+    draftLeaveModalVisible.value = false
+    return
+  }
+
+  const resolve = draftLeaveResolve
+  draftLeaveResolve = null
+  draftLeaveModalVisible.value = false
+  resolve(action)
+}
+
+async function handleSubmitEfluente() {
+  if (saving.value) return
   if (!validateCurrentStep()) return
   const validation = validateEfluenteForSubmit(form)
   if (!validation.valid) {
-    setStatus(validation.errors[0], 'error')
+    setStatus(validation.errors[0], 'error', 6000)
     return
   }
 
@@ -1039,21 +1118,30 @@ async function submitForm() {
     payload.pkCdMeioAmbienteCptm = pkCdMeioAmbienteCptm
   }
 
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    const saved = await saveDraft({
+  saving.value = true
+  setStatus(isEditMode.value ? 'Atualizando efluente...' : 'Criando efluente...', 'info')
+  try {
+    const queuedDraft = await saveDraft({
       silent: true,
       updateRoute: false,
       syncStatus: SYNC_STATUS.PENDING_SYNC
     })
-    localDraftId.value = saved.localId || saved.id
+    localDraftId.value = queuedDraft.localId || queuedDraft.id
     loadedFromLocal.value = true
-    setStatus('Sem conexao. Registro salvo como aguardando envio e sera reenviado automaticamente.', 'warning')
-    return
-  }
 
-  saving.value = true
-  setStatus(isEditMode.value ? 'Atualizando efluente...' : 'Criando efluente...', 'info')
-  try {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      hasSavedSuccessfully.value = true
+      clearTransientMessages()
+      queueToast({
+        type: 'warning',
+        title: 'Aguardando envio',
+        message: 'Efluente salvo como Aguardando Envio. Ele será enviado automaticamente quando o sistema central voltar.',
+        duration: 5000
+      })
+      await router.push(getDraftsListRoute())
+      return
+    }
+
     const method = mode === 'edit' ? 'PUT' : 'POST'
     const url = mode === 'edit'
       ? `/api/efluentes/${pkCdMeioAmbienteCptm}`
@@ -1094,9 +1182,14 @@ async function submitForm() {
     }
     loadedFromLocal.value = false
     hasSavedSuccessfully.value = true
-    await loadAttachments()
-    setStatus('Registro enviado com sucesso.', 'success')
-    if (route.params.id !== pk) router.replace(`/form/${encodeURIComponent(pk)}`)
+    clearTransientMessages()
+    queueToast({
+      type: 'success',
+      title: 'Efluente enviado com sucesso',
+      message: 'Efluente enviado com sucesso.',
+      duration: 5000
+    })
+    await router.push(getDraftsListRoute())
   } catch (err) {
     console.error('Erro ao salvar efluente', err)
     const retryable = isRetryableApiError(err)
@@ -1108,11 +1201,23 @@ async function submitForm() {
     })
     localDraftId.value = saved.localId || saved.id
     loadedFromLocal.value = true
+    if (retryable) {
+      hasSavedSuccessfully.value = true
+      clearTransientMessages()
+      queueToast({
+        type: 'warning',
+        title: 'Aguardando envio',
+        message: 'Efluente salvo como Aguardando Envio. Ele será enviado automaticamente quando o sistema central voltar.',
+        duration: 5000
+      })
+      await router.push(getDraftsListRoute())
+      return
+    }
+
     setStatus(
-      retryable
-        ? 'Sistema central indisponivel. Registro salvo como aguardando envio e sera reenviado automaticamente.'
-        : (err?.message || 'Nao foi possivel salvar o efluente.'),
-      retryable ? 'warning' : 'error'
+      err?.message || 'Não foi possível enviar o efluente. Verifique os dados e tente novamente.',
+      'error',
+      6000
     )
   } finally {
     saving.value = false
@@ -1592,18 +1697,10 @@ function returnToMain() {
   gap: 12px;
 }
 
-.photo-help-grid {
+.photo-help-inline {
   grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.photo-help-card {
-  border: 1px solid var(--gray-200);
-  border-radius: var(--radius);
-  background: var(--white);
-  padding: 10px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .upload-panel,
@@ -1869,6 +1966,43 @@ function returnToMain() {
   backdrop-filter: blur(10px);
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.modal {
+  width: min(460px, 100%);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: 0 18px 50px rgba(16, 24, 40, 0.22);
+  padding: 16px;
+}
+
+.modal h3 {
+  margin: 0 0 0.45rem;
+  color: var(--gray-900);
+}
+
+.modal p {
+  color: var(--gray-600);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
 @media (max-width: 1100px) {
   .wizard-shell {
     grid-template-columns: 1fr;
@@ -1911,8 +2045,7 @@ function returnToMain() {
 
   .wizard-grid,
   .attachments-layout,
-  .review-layout,
-  .photo-help-grid {
+  .review-layout {
     grid-template-columns: 1fr;
   }
 

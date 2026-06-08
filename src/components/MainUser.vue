@@ -1,7 +1,10 @@
 <template>
     <div class="container">
         <div class="user-screen">
-            <div v-if="toastVisible" :class="['toast', toastType]">{{ toastMessage }}</div>
+            <div v-if="toastVisible" :class="['toast', toastType]">
+                <strong v-if="toastTitle">{{ toastTitle }}</strong>
+                <span>{{ toastMessage }}</span>
+            </div>
             <div class="user-header">
                 <div class="header-left">
                     <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
@@ -84,6 +87,7 @@ import { saveInspection, getAllInspections, deleteInspection as deleteInspection
 import { cleanupSentLocalInspections, enviarRascunho, sendInspectionNow } from '../services/sync'
 import { deleteEfluenteAPI, extractEfluenteItems, getMeusEfluentesAPI } from '../services/api'
 import { getEfluenteCardTitle, normalizeApiEfluenteListItem, normalizeLocalEfluenteRecord, SYNC_STATUS } from '../services/efluenteModel'
+import { consumeQueuedToast } from '../services/toastQueue'
 import { Plus, Calendar, Send, ClipboardList, LogOut, User } from 'lucide-vue-next'
 import QuickGrid from './QuickGrid.vue'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
@@ -109,6 +113,7 @@ onMounted(async () => {
 
     // Carrega do sistema central e renderiza junto com os rascunhos locais.
     await setFilter(getInitialFilter())
+    showQueuedToast()
 
     if (typeof window !== 'undefined') {
         window.addEventListener('inspections-synced', handleSyncUpdated)
@@ -205,17 +210,35 @@ function goToSentInspections() {
 }
 
 const status = ref('')
+const toastTitle = ref('')
 const toastMessage = ref('')
 const toastType = ref('')
 const toastVisible = ref(false)
+let toastTimer = null
 
 function showToast(msg, type = 'success', duration = 3000) {
-    toastMessage.value = msg
-    toastType.value = type
+    const payload = typeof msg === 'object' && msg !== null ? msg : { message: msg, type, duration }
+
+    if (toastTimer) {
+        clearTimeout(toastTimer)
+        toastTimer = null
+    }
+
+    toastTitle.value = payload.title || ''
+    toastMessage.value = payload.message || ''
+    toastType.value = payload.type || type
     toastVisible.value = true
-    setTimeout(() => {
+    toastTimer = setTimeout(() => {
         toastVisible.value = false
-    }, duration)
+        toastTitle.value = ''
+        toastTimer = null
+    }, payload.duration || duration)
+}
+
+function showQueuedToast() {
+    const queued = consumeQueuedToast()
+    if (!queued) return
+    showToast(queued, queued.type, queued.duration)
 }
 
 function getInitialFilter() {
@@ -574,6 +597,12 @@ function cancelModal() {
     color: #fff;
     font-weight: 700;
     box-shadow: 0 6px 18px rgba(16,24,40,0.12);
+    display: grid;
+    gap: 0.15rem;
+    max-width: min(420px, calc(100vw - 40px));
+}
+.toast span {
+    font-weight: 600;
 }
 .toast.success { background: #16a34a }
 .toast.warning { background: #ca8a04 }
