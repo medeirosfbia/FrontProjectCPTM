@@ -315,7 +315,7 @@ function clearFilters() {
 
 function openInspection(record) {
   if (!record?.id) return
-  queueDetailsRecord({ ...record, __skipDetailsEndpoint: true, __skipAttachmentsEndpoint: true })
+  queueDetailsRecord(record)
   router.push(`/inspections/${encodeURIComponent(record.id)}/details`)
 }
 

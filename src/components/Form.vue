@@ -467,8 +467,8 @@ const formIdentificationFields = [
 ]
 
 const registrationDateTimeFields = [
-  { key: 'dtDataDoCadastramento', label: 'Data do Cadastramento', type: 'date', help: 'Inserir a data do cadastramanento da informação. Padrão: dd/mm/aaaa.', example: '01/01/2001' },
-  { key: 'hrHoraDoCadastramento', label: 'Hora do Cadastramento', type: 'time', help: 'Inserir a hora do cadastramanento da informação. Padrão: hh:mm.', example: '09:00' }
+  { key: 'dtDataDoCadastramento', label: 'Data do Cadastramento', type: 'date', help: 'Preenchido automaticamente com a data e hora do dispositivo.', example: '01/01/2001', readonly: true },
+  { key: 'hrHoraDoCadastramento', label: 'Hora do Cadastramento', type: 'time', help: 'Preenchido automaticamente com a data e hora do dispositivo.', example: '09:00', readonly: true }
 ]
 
 const monitoredElementFields = [
@@ -576,6 +576,8 @@ onMounted(async () => {
   if (isEditMode.value) {
     await loadEfluente()
     await loadAttachments()
+  } else {
+    initializeNewEfluenteDateTime()
   }
   if (activeStep.value.kind === 'location') initMap()
 })
@@ -619,6 +621,22 @@ function clearTransientMessages() {
 
   status.value = ''
   statusType.value = 'info'
+}
+
+function getCurrentLocalDateTime() {
+  const now = new Date()
+
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+
+  return { date, time }
+}
+
+function initializeNewEfluenteDateTime() {
+  const { date, time } = getCurrentLocalDateTime()
+
+  if (!form.dtDataDoCadastramento) form.dtDataDoCadastramento = date
+  if (!form.hrHoraDoCadastramento) form.hrHoraDoCadastramento = time
 }
 
 async function applyLatestInspectionData() {
@@ -774,6 +792,8 @@ function copyFixedFieldsFromLatestInspection(sourceData = {}) {
 function copyFormFieldsFromFirstInspection(sourceData = {}) {
   for (const key of EFLUENTE_FIELD_KEYS) {
     if (key === 'pkCdMeioAmbienteCptm') continue
+    if (key === 'dtDataDoCadastramento') continue
+    if (key === 'hrHoraDoCadastramento') continue
     form[key] = sourceData[key] ?? ''
   }
   form.pkCdMeioAmbienteCptm = ''

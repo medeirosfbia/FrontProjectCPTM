@@ -93,6 +93,10 @@ export const DATE_EFLUENTE_FIELDS = new Set([
   'dtDataDoCadastramento'
 ])
 
+export const TIME_EFLUENTE_FIELDS = new Set([
+  'hrHoraDoCadastramento'
+])
+
 function canUseCryptoUuid() {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
 }
@@ -175,6 +179,18 @@ function normalizeDateInputValue(value) {
   return `${year}-${month}-${day}`
 }
 
+function normalizeTimeInputValue(value) {
+  if (value === null || value === undefined || value === '') return ''
+
+  const text = String(value).trim()
+  if (!text) return ''
+
+  const timeMatch = text.match(/(?:T|\s)?(\d{2}):(\d{2})(?::\d{2})?/)
+  if (timeMatch) return `${timeMatch[1]}:${timeMatch[2]}`
+
+  return text
+}
+
 export function normalizeDate(value) {
   if (!value || value === '') return null
 
@@ -249,6 +265,8 @@ export function buildEfluentePayload(formData, { ensurePk = false } = {}) {
       payload[key] = toNumberOrNull(formData?.[key])
     } else if (DATE_EFLUENTE_FIELDS.has(key)) {
       payload[key] = normalizeDate(formData?.[key])
+    } else if (TIME_EFLUENTE_FIELDS.has(key)) {
+      payload[key] = normalizeTimeInputValue(formData?.[key])
     } else {
       payload[key] = formData?.[key] ?? ''
     }
@@ -313,6 +331,8 @@ export function mapApiEfluenteToFormData(apiResponse = {}) {
     const value = readApiValue(source, key) ?? ''
     formData[key] = DATE_EFLUENTE_FIELDS.has(key)
       ? normalizeDateInputValue(value)
+      : TIME_EFLUENTE_FIELDS.has(key)
+        ? normalizeTimeInputValue(value)
       : (value ?? '')
   }
 
