@@ -563,7 +563,6 @@ async function submitUserForm() {
 
         if (userModalMode.value === 'edit') {
             const payload = {
-                id: editingUserId.value,
                 nomeCompleto: userForm.value.nomeCompleto,
                 email: userForm.value.email,
                 dataNascimento: userForm.value.dataNascimento,

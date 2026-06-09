@@ -151,7 +151,15 @@ export async function apiFetch(path, options = {}) {
   try { data = text ? JSON.parse(text) : null } catch { data = text }
 
   if (!res.ok) {
-    const err = new Error(data && data.message ? data.message : `HTTP ${res.status}`)
+    const validationErrors = data?.errors && typeof data.errors === 'object'
+      ? Object.values(data.errors).flat().filter(Boolean).join(' ')
+      : ''
+    const message = data?.message
+      || data?.title
+      || validationErrors
+      || (typeof data === 'string' && data.trim() ? data : '')
+      || `HTTP ${res.status}`
+    const err = new Error(message)
     err.status = res.status
     err.response = data
     throw err
@@ -199,31 +207,28 @@ export async function getUserByIdAPI(id) {
 }
 
 export async function updateUsuarioAPI(id, data) {
-  const candidateRequests = [
-    { path: '/Usuarios', method: 'PUT', body: { ...data, id } },
-    { path: '/Usuarios', method: 'PATCH', body: { ...data, id } },
-    { path: `/Usuarios/${id}`, method: 'PUT' },
-    { path: `/Usuarios/${id}`, method: 'PATCH' },
-    { path: `/Usuarios/${id}`, method: 'POST' },
-    { path: `/Usuarios/editar/${id}`, method: 'PUT' },
-    { path: `/Usuarios/editar/${id}`, method: 'PATCH' },
-    { path: `/Usuarios/update/${id}`, method: 'PUT' },
-    { path: `/Usuarios/update/${id}`, method: 'PATCH' }
-  ]
-
-  let lastError = null
-
-  for (const request of candidateRequests) {
-    try {
-      return await apiFetch(request.path, { method: request.method, body: request.body || data })
-    } catch (err) {
-      lastError = err
-      const statusCode = Number(String(err?.message || '').match(/HTTP\s+(\d+)/)?.[1] || err?.response?.status || 0)
-      if (statusCode && statusCode !== 405) throw err
-    }
+  if (id === undefined || id === null || id === '') {
+    throw new Error('ID do usuário obrigatório.')
   }
 
-  throw lastError || new Error('Nao foi possivel atualizar o usuario')
+  const payload = {
+    nomeCompleto: data?.nomeCompleto,
+    email: data?.email,
+    dataNascimento: data?.dataNascimento
+  }
+
+  if (data?.isAdmin !== undefined && data?.isAdmin !== null) {
+    payload.isAdmin = data.isAdmin
+  }
+
+  if (data?.senha) {
+    payload.senha = data.senha
+  }
+
+  return apiFetch(`/Usuarios/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: payload
+  })
 }
 
 export async function deletarUsuarioAPI(id) {
