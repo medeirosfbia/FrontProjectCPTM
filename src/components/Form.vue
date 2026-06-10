@@ -1,43 +1,26 @@
 <template>
   <AppLayout>
     <PageContainer>
-      <Header
-        :logo="logo"
-        :title="isEditMode ? 'Editar Efluente' : 'Novo Efluente'"
-        subtitle="Cadastro ambiental CPTM em etapas"
-      >
+      <Header :logo="logo" :title="isEditMode ? 'Editar Efluente' : 'Novo Efluente'"
+        subtitle="Cadastro ambiental CPTM em etapas">
         <template #actions>
           <button type="button" class="btn ghost" @click="returnToMain">Voltar</button>
         </template>
       </Header>
 
-      <MobileStepHeader
-        :steps="steps"
-        :current-step="currentStep"
-        :progress-percent="progressPercent"
-        @open-steps="showStepSheet = true"
-      />
+      <MobileStepHeader :steps="steps" :current-step="currentStep" :progress-percent="progressPercent"
+        @open-steps="showStepSheet = true" />
 
       <form class="wizard-shell" @submit.prevent="handleSubmitEfluente">
         <aside class="wizard-sidebar">
-          <StepperResponsivo
-            :steps="steps"
-            :current-step="currentStep"
-            :progress-percent="progressPercent"
-            :step-errors="stepErrors"
-            @go-to-step="goToStep"
-          />
+          <StepperResponsivo :steps="steps" :current-step="currentStep" :progress-percent="progressPercent"
+            :step-errors="stepErrors" @go-to-step="goToStep" />
         </aside>
 
         <section class="wizard-panel">
           <div class="tablet-stepper">
-            <StepperResponsivo
-              :steps="compactSteps"
-              :current-step="compactCurrentStep"
-              :progress-percent="progressPercent"
-              :step-errors="compactStepErrors"
-              @go-to-step="goToCompactStep"
-            />
+            <StepperResponsivo :steps="compactSteps" :current-step="compactCurrentStep"
+              :progress-percent="progressPercent" :step-errors="compactStepErrors" @go-to-step="goToCompactStep" />
             <button type="button" class="btn ghost" @click="showStepSheet = true">Ver todas as etapas</button>
           </div>
 
@@ -51,44 +34,23 @@
           </div>
 
           <div v-if="activeStep.kind === 'fields'" class="wizard-grid">
-            <label
-              v-for="field in activeStep.fields"
-              :key="field.key"
-              class="field"
-              :class="{ wide: field.wide }"
-            >
+            <label v-for="field in activeStep.fields" :key="field.key" class="field" :class="{ wide: field.wide }">
               <div class="field-label-row">
                 <span>{{ field.label }}</span>
                 <FieldHelp :text="field.help" :example="field.example" />
               </div>
-              <textarea
-                v-if="field.type === 'textarea'"
-                v-model="form[field.key]"
-                rows="5"
-                :placeholder="field.placeholder || ''"
-                :disabled="field.readonly"
-              />
-              <select
-                v-else-if="field.type === 'select'"
-                v-model="form[field.key]"
-                :disabled="field.readonly"
-              >
+              <textarea v-if="field.type === 'textarea'" v-model="form[field.key]" rows="5"
+                :placeholder="field.placeholder || ''" :disabled="field.readonly" />
+              <select v-else-if="field.type === 'select'" v-model="form[field.key]" :disabled="field.readonly">
                 <option value="">Selecione</option>
-                <option v-for="option in getFieldOptions(field)" :key="option" :value="option">{{ option }}</option>
+                <option v-for="option in getFieldOptions(field)" :key="option.codigo" :value="option.codigo">
+                  {{ option.descricao }}
+                </option>
               </select>
-              <input
-                v-else
-                v-model="form[field.key]"
-                :type="field.type || 'text'"
-                :step="field.step"
-                :min="field.min"
-                :max="field.max"
-                :inputmode="field.inputmode"
-                :placeholder="field.placeholder || ''"
-                :readonly="field.readonly"
-                :disabled="field.readonly"
-                @change="field.location ? updateMapFromInputs() : null"
-              />
+              <input v-else v-model="form[field.key]" :type="field.type || 'text'" :step="field.step" :min="field.min"
+                :max="field.max" :inputmode="field.inputmode" :placeholder="field.placeholder || ''"
+                :readonly="field.readonly" :disabled="field.readonly"
+                @change="field.location ? updateMapFromInputs() : null" />
             </label>
           </div>
 
@@ -99,34 +61,24 @@
                   <span>{{ field.label }}</span>
                   <FieldHelp :text="field.help" :example="field.example" />
                 </div>
-                <select
-                  v-if="field.type === 'select'"
-                  v-model="form[field.key]"
-                  :disabled="field.readonly"
-                >
+                <select v-if="field.type === 'select'" v-model="form[field.key]" :disabled="field.readonly">
                   <option value="">Selecione</option>
-                  <option v-for="option in getFieldOptions(field)" :key="option" :value="option">{{ option }}</option>
+                  <option v-for="option in getFieldOptions(field)" :key="option.codigo" :value="option.codigo">
+                    {{ option.descricao }}
+                  </option>
                 </select>
-                <input
-                  v-else
-                  v-model="form[field.key]"
-                  :type="field.type || 'text'"
-                  :step="field.step"
-                  :min="field.min"
-                  :max="field.max"
-                  :inputmode="field.inputmode"
-                  :placeholder="field.placeholder || ''"
-                  :readonly="field.readonly"
-                  :disabled="field.readonly"
-                  @change="field.location ? updateMapFromInputs() : null"
-                />
+                <input v-else v-model="form[field.key]" :type="field.type || 'text'" :step="field.step" :min="field.min"
+                  :max="field.max" :inputmode="field.inputmode" :placeholder="field.placeholder || ''"
+                  :readonly="field.readonly" :disabled="field.readonly"
+                  @change="field.location ? updateMapFromInputs() : null" />
               </label>
             </div>
             <div class="map-card">
               <div id="efluente-map"></div>
               <div class="map-actions">
                 <button type="button" class="btn info" @click="captureGPS">Pegar minha localizacao atual</button>
-                <p class="muted">O marcador vermelho define o ponto do cadastro. O bonequinho mostra onde voce esta agora.</p>
+                <p class="muted">O marcador vermelho define o ponto do cadastro. O bonequinho mostra onde voce esta
+                  agora.</p>
               </div>
             </div>
           </div>
@@ -136,38 +88,33 @@
               <FieldHelp text="Inserir Foto. Tamanho: 3x4. Posição e Orientação: Paisagem/Horizontal." />
             </div>
 
-            <div
-              class="upload-panel"
-              :class="{ dragging: isDraggingFiles }"
-              @dragenter.prevent="isDraggingFiles = true"
-              @dragover.prevent="isDraggingFiles = true"
-              @dragleave.prevent="isDraggingFiles = false"
-              @drop.prevent="onFilesDropped"
-            >
+            <div class="upload-panel" :class="{ dragging: isDraggingFiles }" @dragenter.prevent="isDraggingFiles = true"
+              @dragover.prevent="isDraggingFiles = true" @dragleave.prevent="isDraggingFiles = false"
+              @drop.prevent="onFilesDropped">
               <div class="upload-copy">
                 <h3>Anexos/Fotos</h3>
-                <p class="muted">Arraste arquivos para este card ou selecione no navegador. Nada sera enviado antes de clicar em Enviar.</p>
+                <p class="muted">Arraste arquivos para este card ou selecione no navegador. Nada sera enviado antes de
+                  clicar
+                  em Enviar.</p>
               </div>
               <div class="upload-counters">
                 <span>{{ imageFiles.length }} imagens</span>
                 <span>{{ documentFiles.length }} documentos</span>
               </div>
               <div class="upload-actions">
-                <button
-                  type="button"
-                  class="upload-drop"
-                  :class="{ active: isCameraOpen }"
-                  :disabled="isCameraStarting"
-                  @click="openCamera"
-                >
-                  <strong>{{ isCameraStarting ? 'Abrindo camera...' : isCameraOpen ? 'Camera aberta' : 'Tirar foto' }}</strong>
+                <button type="button" class="upload-drop" :class="{ active: isCameraOpen }" :disabled="isCameraStarting"
+                  @click="openCamera">
+                  <strong>{{ isCameraStarting ? 'Abrindo camera...' : isCameraOpen ? 'Camera aberta' : 'Tirar foto'
+                  }}</strong>
                 </button>
                 <label class="upload-drop">
                   <input type="file" accept="image/*" multiple @change="onFilesSelected" hidden />
                   <strong>Selecionar da galeria</strong>
                 </label>
                 <label class="upload-drop">
-                  <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain" multiple @change="onFilesSelected" hidden />
+                  <input type="file"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
+                    multiple @change="onFilesSelected" hidden />
                   <strong>Selecionar documento</strong>
                 </label>
               </div>
@@ -231,7 +178,7 @@
               <dl>
                 <template v-for="field in group.fields" :key="field.key">
                   <dt>{{ field.label }}</dt>
-                  <dd>{{ displayValue(form[field.key]) }}</dd>
+                  <dd>{{ displayValue(field, form[field.key]) }}</dd>
                 </template>
               </dl>
             </article>
@@ -255,23 +202,14 @@
 
           <footer class="wizard-actions">
             <button type="button" class="btn" :disabled="currentStep === 0" @click="prevStep">Voltar</button>
-            <button type="button" class="btn warning" :disabled="saving" @click="saveDraftAndReturnToDrafts">Salvar rascunho</button>
-            <button
-              v-if="!isEditMode"
-              type="button"
-              class="btn info"
-              :disabled="copyLastInspectionBusy"
-              @click="applyLatestInspectionData"
-            >
+            <button type="button" class="btn warning" :disabled="saving" @click="saveDraftAndReturnToDrafts">Salvar
+              rascunho</button>
+            <button v-if="!isEditMode" type="button" class="btn info" :disabled="copyLastInspectionBusy"
+              @click="applyLatestInspectionData">
               {{ copyLastInspectionBusy ? 'Buscando...' : 'Preencher com ultima inspecao' }}
             </button>
-            <button
-              v-if="!isEditMode"
-              type="button"
-              class="btn info"
-              :disabled="copyFirstInspectionBusy"
-              @click="applyFirstInspectionData"
-            >
+            <button v-if="!isEditMode" type="button" class="btn info" :disabled="copyFirstInspectionBusy"
+              @click="applyFirstInspectionData">
               {{ copyFirstInspectionBusy ? 'Buscando...' : 'Preencher com primeira inspecao' }}
             </button>
             <button v-if="!isLastStep" type="button" class="btn-primary" @click="nextStep">Proximo</button>
@@ -282,21 +220,16 @@
         </section>
       </form>
 
-      <StepperBottomSheet
-        :visible="showStepSheet"
-        :steps="steps"
-        :current-step="currentStep"
-        :step-errors="stepErrors"
-        @close="showStepSheet = false"
-        @go-to-step="goToStep"
-      />
+      <StepperBottomSheet :visible="showStepSheet" :steps="steps" :current-step="currentStep" :step-errors="stepErrors"
+        @close="showStepSheet = false" @go-to-step="goToStep" />
 
       <div v-if="draftLeaveModalVisible" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="modal">
           <h3>Salvar como rascunho?</h3>
           <p>Deseja salvar este efluente como rascunho antes de sair?</p>
           <div class="modal-actions">
-            <button type="button" class="btn ghost" :disabled="saving" @click="resolveDraftLeave('cancel')">Cancelar</button>
+            <button type="button" class="btn ghost" :disabled="saving"
+              @click="resolveDraftLeave('cancel')">Cancelar</button>
             <button type="button" class="btn" :disabled="saving" @click="resolveDraftLeave('discard')">Não</button>
             <button type="button" class="btn-primary" :disabled="saving" @click="resolveDraftLeave('save')">
               {{ saving ? 'Salvando...' : 'Sim, salvar' }}
@@ -421,29 +354,667 @@ const FIXED_FIELDS_FROM_LAST_INSPECTION = [
 const emptyForm = createEmptyEfluenteFormData()
 const form = reactive(createEmptyEfluenteFormData())
 
-const siglaMeioAmbienteOptions = ['GEA.DEAE']
-const areaGestoraOptions = ['DEPTO. DE MANUT. DE SISTEMAS ELETR. E RESTAB. DE SERVICOS']
-const naturezaOptions = ['Emissões Atmosféricas', 'Efluentes', 'Resíduos', 'Ruído', 'Outro(a)(s)']
-const municipioOptions = ['Campo Limpo Paulista', 'São Paulo', 'Jundiaí', 'Francisco Morato', 'Ferraz de Vasconcelos']
-const linhaOptions = ['Linha 07 - Rubi', 'Linha 10 - Turquesa', 'Linha 11 - Coral', 'Linha 12 - Safira', 'Linha 13 - Jade']
-const estacaoOptions = ['Estação Jardim Helena - Vila Mara', 'Estação Brás', 'Estação Luz', 'Estação Jundiaí', 'Estação Ferraz de Vasconcelos']
-const viaOptions = ['Via 03E - Trecho 2', 'Via 01', 'Via 02', 'Via 03', 'Via 04']
-const trechoOptions = ['Estação Antônio Gianetti Neto - Estação Ferraz de Vasconcelos']
-const outroOptions = ['Outro(a)(s)']
-const atividadeCptmOptions = ['Empreendimento/Obra', 'Operação', 'Manutenção', 'Outro(a)(s)']
-const edificacaoOptions = ['Estação', 'Pátio', 'Via permanente', 'Subestação', 'Outro(a)(s)']
-const origemOptions = ['Industrial', 'Sanitário', 'Pluvial', 'Outro(a)(s)']
-const fonteGeradoraOptions = ['Banheiro químico', 'Caixa separadora', 'Lavagem de peças', 'Outro(a)(s)']
-const destinacaoOptions = ['Interligação em rede coletora', 'Coleta e transporte externo', 'Tratamento interno', 'Outro(a)(s)']
-const veiculoOptions = ['Caminhão', 'Caminhão tanque', 'Outro(a)(s)']
+// Dados de Domínio Integrados (Hardcoded para funcionamento Offline PWA)
+const tipoProprietarioOptions = ref([
+  { codigo: 1, descricao: 'CPTM - Titularidade' },
+  { codigo: 2, descricao: 'CPTM - Posse' },
+  { codigo: 3, descricao: 'Metrô' },
+  { codigo: 4, descricao: 'Alienado' },
+  { codigo: 5, descricao: 'MRS' },
+  { codigo: 6, descricao: 'RFSA' },
+  { codigo: 7, descricao: 'RFSA/SPU' },
+  { codigo: 8, descricao: 'CBTU' },
+  { codigo: 9, descricao: 'Pessoa Jurídica' },
+  { codigo: 10, descricao: 'Pessoa Física' },
+  { codigo: 11, descricao: 'Indefinido' },
+  { codigo: 13, descricao: 'FEPASA' },
+  { codigo: 14, descricao: 'Permuta' }
+])
+
+const tipoProprietarioL13Options = ref([
+  { codigo: 1, descricao: 'CPTM - Titularidade' },
+  { codigo: 5, descricao: 'MRS' },
+  { codigo: 15, descricao: 'Prefeitura de Guarulhos' },
+  { codigo: 16, descricao: 'DAEE' },
+  { codigo: 18, descricao: 'USP Leste' },
+  { codigo: 19, descricao: 'GRU - Aeroporto' },
+  { codigo: 20, descricao: 'CCR - Rodovia Dutra' },
+  { codigo: 21, descricao: 'Ecopistas' },
+  { codigo: 22, descricao: 'CDHU' }
+])
+
+const simNaoOptions = ref([
+  { codigo: 1, descricao: 'Sim' },
+  { codigo: 2, descricao: 'Não' },
+  { codigo: 3, descricao: 'Não Informado' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const statusRegistroOptions = ref([
+  { codigo: 1, descricao: 'Ativo' },
+  { codigo: 2, descricao: 'Inativo' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const statusDesvioOptions = ref([
+  { codigo: 1, descricao: 'Não Regularizado' },
+  { codigo: 2, descricao: 'Regularizado' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+
+const naturezaOptions = ref([
+  { codigo: 13, descricao: 'Áreas Ambientalmente Protegidas' },
+  { codigo: 3, descricao: 'Áreas Contaminadas' },
+  { codigo: 1, descricao: 'Arqueologia' },
+  { codigo: 18, descricao: 'Comunicação Social' },
+  { codigo: 17, descricao: 'Documentação' },
+  { codigo: 5, descricao: 'Efluente' },
+  { codigo: 4, descricao: 'Emissões Atmosféricas' },
+  { codigo: 8, descricao: 'Erosões e Movimentos de Massa' },
+  { codigo: 11, descricao: 'Fauna' },
+  { codigo: 10, descricao: 'Gerenciamento de Solo' },
+  { codigo: 16, descricao: 'Lançamentos Irregulares' },
+  { codigo: 2, descricao: 'Patrimônio Histórico' },
+  { codigo: 6, descricao: 'Produtos Perigosos' },
+  { codigo: 15, descricao: 'Recursos Hídricos' },
+  { codigo: 7, descricao: 'Resíduos Sólidos' },
+  { codigo: 14, descricao: 'Ruído e Vibração' },
+  { codigo: 20, descricao: 'Segmentação Urbana' },
+  { codigo: 19, descricao: 'Sinalização e Isolamento' },
+  { codigo: 9, descricao: 'Sistema de Drenagem, Inundações e Alagamentos' },
+  { codigo: 12, descricao: 'Vegetação' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const tipoAtividadeListadaOptions = ref([
+  { codigo: 1, descricao: 'Estação de Tratamento de Efluente' },
+  { codigo: 2, descricao: 'Transporte' },
+  { codigo: 96, descricao: 'Outro(a)(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const tipoDraListadoOptions = ref([
+  { codigo: 1, descricao: 'Cadastro Técnico Federal (IBAMA) - CTF/IBAMA' },
+  { codigo: 2, descricao: 'Certificado de Dispensa de Licença - CDL' },
+  { codigo: 3, descricao: 'Certificado de Movimentação de Resíduos de Interesse Ambiental - CADRI' },
+  { codigo: 4, descricao: 'Declaração de Movimentação de Resíduos - DMR' },
+  { codigo: 5, descricao: 'Ficha de Informações de Segurança de Produtos Químicos - FISPQ' },
+  { codigo: 6, descricao: 'Licença de Operação - LO' },
+  { codigo: 7, descricao: 'Manifesto de Transporte de Resíduos - MTR' },
+  { codigo: 96, descricao: 'Outro(a)(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const atividadeCptmOptions = ref([
+  { codigo: 1, descricao: 'Empreendimento/Obra' },
+  { codigo: 2, descricao: 'Manutenção' },
+  { codigo: 3, descricao: 'Operação' },
+  { codigo: 96, descricao: 'Outro(a)(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const edificacaoOptions = ref([
+  { codigo: 1, descricao: 'Abrigo' },
+  { codigo: 2, descricao: 'Base de manutenção' },
+  { codigo: 3, descricao: 'Cabine Primária' },
+  { codigo: 4, descricao: 'Cabine Seccionadora' },
+  { codigo: 5, descricao: 'Estação' },
+  { codigo: 6, descricao: 'Lavador de TUE' },
+  { codigo: 7, descricao: 'Oficina' },
+  { codigo: 8, descricao: 'Pátio' },
+  { codigo: 9, descricao: 'Prédio administrativo' },
+  { codigo: 10, descricao: 'Prédio de apoio' },
+  { codigo: 11, descricao: 'Sala técnica' },
+  { codigo: 12, descricao: 'Subestação' },
+  { codigo: 13, descricao: 'Trecho - Km/poste' },
+  { codigo: 14, descricao: 'Vários' },
+  { codigo: 96, descricao: 'Outro(a)(s)' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const origemOptions = ref([
+  { codigo: 1, descricao: 'Doméstico/Sanitário' },
+  { codigo: 2, descricao: 'Fundação' },
+  { codigo: 3, descricao: 'Industrial' },
+  { codigo: 96, descricao: 'Outro(a)(s)' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const fonteGeradoraOptions = ref([
+  { codigo: 1, descricao: 'Atividade de obra' },
+  { codigo: 2, descricao: 'Banheiro químico' },
+  { codigo: 3, descricao: 'Banheiros/vestiários/refeitórios' },
+  { codigo: 4, descricao: 'Fossa séptica' },
+  { codigo: 5, descricao: 'Lavagem de trens/peças' },
+  { codigo: 6, descricao: 'Manutenção ETE' },
+  { codigo: 7, descricao: 'Valas de manutenção' },
+  { codigo: 96, descricao: 'Outro(a)(s)' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const destinacaoOptions = ref([
+  { codigo: 1, descricao: 'Esgotamento e transporte' },
+  { codigo: 2, descricao: 'Interligação em rede coletora' },
+  { codigo: 3, descricao: 'Lançamento em galeria de águas pluviais' },
+  { codigo: 4, descricao: 'Reinfiltração' },
+  { codigo: 5, descricao: 'Tratamento em ETE' },
+  { codigo: 96, descricao: 'Outro(a)(s)' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const veiculoOptions = ref([
+  { codigo: 1, descricao: 'Caminhão' },
+  { codigo: 96, descricao: 'Outro(a)(s)' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const siglaMeioAmbienteOptions = ref([
+  { codigo: 1, descricao: 'GEA' },
+  { codigo: 2, descricao: 'GEA.DEAE' },
+  { codigo: 3, descricao: 'GEA.DEAO' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+
+const areaGestoraOptions = ref([
+  { codigo: 1, descricao: '(DE.GEA.0000) GERENCIA DE MEIO AMBIENTE [ID.10-14-4-0-0000]' },
+  { codigo: 2, descricao: '(DE.GEA.DEAE.0000) DEPTO. DE MEIO AMBIENTE - EMPREENDIMENTOS [ID.10-14-4-1-0000]' },
+  { codigo: 3, descricao: '(DE.GEA.DEAO.0000) DEPTO. DE MEIO AMBIENTE - OPERACAO [ID.10-14-4-2-0000]' },
+  { codigo: 5, descricao: '(DE.GED.0000) GERENCIA DE EMPREENDIMENTOS - EXPANSAO [ID.10-14-7-0-0000]' },
+  { codigo: 6, descricao: '(DE.GED.DEDC.0000) DEPTO. DE OBRAS CIVIS - EXPANSAO [ID.10-14-7-1-0000]' },
+  { codigo: 7, descricao: '(DE.GED.DEDM.0000) DEPTO. DE MONTAGEM DE VIA PERMANENTE E RA [ID.10-14-7-2-0000]' },
+  { codigo: 8, descricao: '(DE.GED.DEDS.0000) DEPTO. DE IMPLANTACAO DE SISTEMAS - EXPANSAO [ID.10-14-7-3-0000]' },
+  { codigo: 9, descricao: '(DE.GEF.0000) GERENCIA DE EMPREENDIMENTOS [ID.10-14-6-0-0000]' },
+  { codigo: 10, descricao: '(DE.GEF.DEFC.0000) DEPTO. DE OBRAS CIVIS [ID.10-14-6-2-0000]' },
+  { codigo: 11, descricao: '(DE.GEF.DEFS.0000) DEPTO. DE OBRAS DE SISTEMAS [ID.10-14-6-1-0000]' },
+  { codigo: 12, descricao: '(DE.GEO.0000) GERENCIA DE EMPREENDIMENTOS - MODERNIZACAO [ID.10-14-2-0-0000]' },
+  { codigo: 14, descricao: '(DE.GEP.0000) GERENCIA DE PROJETOS [ID.10-14-1-0-0000]' },
+  { codigo: 15, descricao: '(DE.GEP.DEPE.0000) DEPTO. DE PROJETOS DE EDIFICACOES [ID.10-14-1-2-0000]' },
+  { codigo: 16, descricao: '(DE.GEP.DEPG.0000) DEPTO. DE CONSISTENCIA E INOVACAO DE PROJETOS [ID.10-14-1-4-0000]' },
+  { codigo: 17, descricao: '(DE.GEP.DEPI.0000) DEPTO. DE PROJETOS DE INFRAESTRUTURA [ID.10-14-1-1-0000]' },
+  { codigo: 18, descricao: '(DE.GEP.DEPS.0000) DEPTO. DE PROJETOS DE INSTALACOES E SISTEMAS [ID.10-14-1-3-0000]' },
+  { codigo: 19, descricao: '(DE.GET.0000) GERENCIA DE EMPREENDIMENTOS - SISTEMAS [ID.10-14-5-0-0000]' },
+  { codigo: 20, descricao: '(DE.GET.DETA.0000) DEPTO. DE SINALIZACAO E TELEFONIA [ID.10-14-5-4-0000]' },
+  { codigo: 21, descricao: '(DE.GET.DETE.0000) DEPTO. DE SISTEMAS DE ENERGIA [ID.10-14-5-5-0000]' },
+  { codigo: 22, descricao: '(DE.GET.DETO.0000) DEPTO. DE PROJETOS DE IMPLANTACAO DE SISTEMAS [ID.10-14-5-6-0000]' },
+  { codigo: 25, descricao: '(DF.GFA.0000) GERENCIA ADMINISTRATIVA [ID.10-12-4-0-0000]' },
+  { codigo: 29, descricao: '(DF.GFA.DFAL.0000) DEPTO. DE LOGISTICA ADMINISTRATIVA [ID.10-12-4-1-0000]' },
+  { codigo: 34, descricao: '(DF.GFA.DFAS.0000) DEPTO. DE SERVICOS ADMINISTRATIVOS [ID.10-12-4-2-0000]' },
+  { codigo: 326, descricao: '(DF.GFH.0000) GERENCIA DE DESENV. ORGAN. E RECURSOS HUMANOS [ID.10-12-8-0-0000]' },
+  { codigo: 327, descricao: '(DF.GFH.DFHS.0000) DEPTO. DE SAUDE E SEG. DO TRABALHO [ID.10-12-8-5-0000]' },
+  { codigo: 328, descricao: '(DF.GFI.0000) GERENCIA DE TECNOLOGIA DA INFORMACAO [ID.10-12-5-0-0000]' },
+  { codigo: 329, descricao: '(DF.GFI.DFIM.0000) DEPTO. DE SUP. E MANUTENCAO DE TI [ID.10-12-5-3-0000]' },
+  { codigo: 330, descricao: '(DO.GOA.0000) GERENCIA DE ATENDIMENTO [ID.10-16-9-0-0000]' },
+  { codigo: 331, descricao: '(DO.GOA.DOAE.0000) DEPTO DE ATENDIMENTO EM ESTACAO [ID.10-16-9-1-0000]' },
+  { codigo: 332, descricao: '(DO.GOA.DOAP.0000) DEPTO DE ATENDIMENTO E SEGURANCA PATRIMONIAL [ID.10-16-9-3-0000]' },
+  { codigo: 333, descricao: '(DO.GOA.DOAS.0000) DEPTO DE ATENDIMENTO E SEGURANCA [ID.10-16-9-2-0000]' },
+  { codigo: 49, descricao: '(DO.GOC.0000) GERENCIA CIRCULACAO E CONTROLE OPERACIONAL [ID.10-16-2-0-0000]' },
+  { codigo: 334, descricao: '(DO.GOC.DOCC.0000) DEPTO. DE CIRCULAÇÃO [ID.10-16-2-8-0000]' },
+  { codigo: 66, descricao: '(DO.GOC.DOCP.0000) DEPTO. DE CONTROLE OPERACIONAL [ID.10-16-2-1-0000]' },
+  { codigo: 69, descricao: '(DO.GOC.DOCT.0000) DEPTO. DE ESTRATEGIA OPERACIONAL [ID.10-16-2-5-0000]' },
+  { codigo: 131, descricao: '(DO.GOF.0000) GERENCIA DE MANUT. DE EQUIPAMENTOS FIXOS [ID.10-15-5-0-0000]' },
+  { codigo: 132, descricao: '(DO.GOF.DOFA.0000) DEPTO. DE MANUT. DE SISTEMAS AUXILIARES [ID.10-15-5-1-0000]' },
+  { codigo: 142, descricao: '(DO.GOF.DOFE.0000) DEPTO. DE MANUT. DE SISTEMAS DE ENERGIA [ID.10-15-5-2-0000]' },
+  { codigo: 156, descricao: '(DO.GOF.DOFS.0000) DEPTO. DE MANUT. DE SISTEMAS ELETR. E RESTAB. DE SERVICOS [ID.10-15-5-3-0000]' },
+  { codigo: 187, descricao: '(DO.GOG.0000) GERENCIA ENG. DE OPERACAO [ID.10-16-7-0-0000]' },
+  { codigo: 188, descricao: '(DO.GOG.DOGC.0000) DEPTO. ENG. DE ESTACOES E COMUNICACAO [ID.10-16-7-2-0000]' },
+  { codigo: 193, descricao: '(DO.GOG.DOGI.0000) DEPTO. ENG. DE SISTEMAS E EQUIPAMENTOS [ID.10-16-7-1-0000]' },
+  { codigo: 197, descricao: '(DO.GOL.0000) GERENCIA DE LOGISTICA [ID.10-15-7-0-0000]' },
+  { codigo: 198, descricao: '(DO.GOL.DOLA.0000) DEPTO. DE ALMOXARIFADOS [ID.10-15-7-1-0000]' },
+  { codigo: 201, descricao: '(DO.GOL.DOLM.0000) DEPTO. DE GESTAO E CADASTRO DE MATERIAIS [ID.10-15-7-2-0000]' },
+  { codigo: 38, descricao: '(DO.GOM.0000) GERENCIA GERAL DE MANUTENCAO [ID.10-15-1-0-0000]' },
+  { codigo: 39, descricao: '(DO.GOO.0000) GERENCIA GERAL DE OPERACAO [ID.10-16-1-0-0000]' },
+  { codigo: 210, descricao: '(DO.GOR.0000) GERENCIA MANUT. MAT RODANTE E OFICINAS [ID.10-15-3-0-0000]' },
+  { codigo: 213, descricao: '(DO.GOR.DORA.0000) DEPTO. MANUT. MAT RODANTE - LAPA [ID.10-15-3-4-0000]' },
+  { codigo: 219, descricao: '(DO.GOR.DORE.0000) DEPTO. MANUT. MAT RODANTE - ENG. S PAULO [ID.10-15-3-6-0000]' },
+  { codigo: 226, descricao: '(DO.GOR.DORO.0000) DEPTO. DE OFICINAS DE MANUT. DE EQUIPAMENTOS [ID.10-15-3-7-0000]' },
+  { codigo: 241, descricao: '(DO.GOR.DORV.0000) DEPTO. MANUT. DE VEICULOS FERROVIARIOS E AUXILIARES [ID.10-15-3-8-0000]' },
+  { codigo: 274, descricao: '(DO.GOT.0000) GERENCIA ENG. DE MANUTENCAO [ID.10-15-4-0-0000]' },
+  { codigo: 278, descricao: '(DO.GOT.DOTI.0000) DEPTO. ENG. DE MANUT. DE INSTALACOES FIXAS [ID.10-15-4-3-0000]' },
+  { codigo: 281, descricao: '(DO.GOT.DOTM.0000) DEPTO. ENG. DE MANUT. DE MAT RODANTE [ID.10-15-4-5-0000]' },
+  { codigo: 286, descricao: '(DO.GOT.DOTV.0000) DEPTO. ENG. DE MANUT. DE VIA PERMANENTE E ESTRUTURA CIVIL [ID.10-15-4-1-0000]' },
+  { codigo: 289, descricao: '(DO.GOV.0000) GERENCIA DE MANUT. DE VIA PERMANENTE E ESTRUTURA CIVIL [ID.10-15-6-0-0000]' },
+  { codigo: 291, descricao: '(DO.GOV.DOVC.0000) DEPTO. DE MANUT. DE ESTRUTURA CIVIL [ID.10-15-6-6-0000]' },
+  { codigo: 297, descricao: '(DO.GOV.DOVF.0000) DEPTO. PLAN. E CONTR. DE MANUT. DE VIA PERMANENTE [ID.10-15-6-4-0000]' },
+  { codigo: 309, descricao: '(DO.GOV.DOVL.0000) DEPTO. DE MANUT. DE VIA PERMANENTE [ID.10-15-6-5-0000]' },
+  { codigo: 335, descricao: '(DP.GPM.DPMT.0000) DEPTO DE GESTÃO DO TERRITÓRIO [ID.10-13-8-2-0000]' },
+  { codigo: 336, descricao: '(DP.GPN.0000) GERENCIA DE NOVOS NEGOCIOS [ID.10-13-4-0-0000]' },
+  { codigo: 337, descricao: '(DP.GPN.DPNG.0000) DEPTO. DE GESTAO DE NEGOCIOS [ID.10-13-4-2-0000]' },
+  { codigo: 997, descricao: 'Não se aplica(m)' },
+  { codigo: 998, descricao: 'Inexistente(s)' },
+  { codigo: 999, descricao: 'Indefinido(a)(s)' },
+  { codigo: 1000, descricao: 'Não avaliado(a)(s)' }
+])
+
+const municipioOptions = ref([
+  { codigo: 24, descricao: 'Arujá' },
+  { codigo: 10, descricao: 'Barueri' },
+  { codigo: 25, descricao: 'Biritiba-Mirim' },
+  { codigo: 6, descricao: 'Caieiras' },
+  { codigo: 26, descricao: 'Cajamar' },
+  { codigo: 4, descricao: 'Campo Limpo Paulista' },
+  { codigo: 11, descricao: 'Carapicuíba' },
+  { codigo: 27, descricao: 'Cotia' },
+  { codigo: 28, descricao: 'Diadema' },
+  { codigo: 29, descricao: 'Embú' },
+  { codigo: 30, descricao: 'Embú-Guaçu' },
+  { codigo: 20, descricao: 'Ferraz de Vasconcelos' },
+  { codigo: 5, descricao: 'Francisco Morato' },
+  { codigo: 7, descricao: 'Franco da Rocha' },
+  { codigo: 31, descricao: 'Guararema' },
+  { codigo: 23, descricao: 'Guarulhos' },
+  { codigo: 32, descricao: 'Itapecerica da Serra' },
+  { codigo: 8, descricao: 'Itapevi' },
+  { codigo: 21, descricao: 'Itaquaquecetuba' },
+  { codigo: 9, descricao: 'Jandira' },
+  { codigo: 2, descricao: 'Jundiaí' },
+  { codigo: 33, descricao: 'Juquitiba' },
+  { codigo: 46, descricao: 'Mairinque' },
+  { codigo: 34, descricao: 'Mairiporã' },
+  { codigo: 16, descricao: 'Mauá' },
+  { codigo: 18, descricao: 'Mogi das Cruzes' },
+  { codigo: 12, descricao: 'Osasco' },
+  { codigo: 35, descricao: 'Pirapora do Bom Jesus' },
+  { codigo: 22, descricao: 'Poá' },
+  { codigo: 14, descricao: 'Ribeirão Pires' },
+  { codigo: 13, descricao: 'Rio Grande da Serra' },
+  { codigo: 36, descricao: 'Salesópolis' },
+  { codigo: 37, descricao: 'Santa Isabel' },
+  { codigo: 38, descricao: 'Santana de Parnaíba' },
+  { codigo: 15, descricao: 'Santo André' },
+  { codigo: 45, descricao: 'Santos' },
+  { codigo: 39, descricao: 'São Bernardo do Campo' },
+  { codigo: 17, descricao: 'São Caetano do Sul' },
+  { codigo: 40, descricao: 'São Lourenço da Serra' },
+  { codigo: 1, descricao: 'São Paulo' },
+  { codigo: 43, descricao: 'São Roque' },
+  { codigo: 44, descricao: 'São Vicente' },
+  { codigo: 19, descricao: 'Suzano' },
+  { codigo: 41, descricao: 'Taboão da Serra' },
+  { codigo: 42, descricao: 'Vargem Grande Paulista' },
+  { codigo: 3, descricao: 'Várzea Paulista' },
+  { codigo: 99, descricao: 'Diversos (Ver Observação)' },
+  { codigo: 997, descricao: 'Não se aplica(m)' },
+  { codigo: 998, descricao: 'Inexistente(s)' },
+  { codigo: 999, descricao: 'Indefinido(a)(s)' },
+  { codigo: 1000, descricao: 'Não avaliado(a)(s)' }
+])
+
+const linhaOptions = ref([
+  { codigo: 1, descricao: 'Linha 07 - Rubi' },
+  { codigo: 2, descricao: 'Linha 08 - Diamante' },
+  { codigo: 3, descricao: 'Linha 09 - Esmeralda' },
+  { codigo: 4, descricao: 'Linha 10 - Turquesa' },
+  { codigo: 5, descricao: 'Linha 11 - Coral' },
+  { codigo: 6, descricao: 'Linha 12 - Safira' },
+  { codigo: 7, descricao: 'Linha 07 - Rubi / Linha 08 - Diamante' },
+  { codigo: 8, descricao: 'Linha 08 - Diamante / Linha 09 - Esmeralda' },
+  { codigo: 9, descricao: 'Linha 09 - Esmeralda / Linha 10 - Turquesa' },
+  { codigo: 10, descricao: 'Linha 07 - Rubi / Linha 08 - Diamante / Linha 11 - Coral' },
+  { codigo: 11, descricao: 'Linha 07 - Rubi / Linha 11 - Coral' },
+  { codigo: 12, descricao: 'Linha 10 - Turquesa / Linha 11 - Coral' },
+  { codigo: 13, descricao: 'Linha 11 - Coral / Linha 12 - Safira' },
+  { codigo: 14, descricao: 'Linha 10 - Turquesa / Linha 11 - Coral / Linha 12 - Safira' },
+  { codigo: 15, descricao: 'Linha 07 - Rubi / Linha 08 - Diamante / Linha 09 - Esmeralda / Linha 10 - Turquesa / Linha 11 - Coral' },
+  { codigo: 16, descricao: 'Linha 08 - Diamante / Linha 09 - Esmeralda / Linha 10 - Turquesa / Linha 11 - Coral / Linha 12 - Safira' },
+  { codigo: 17, descricao: 'Linha 07 - Rubi / Linha 08 - Diamante / Linha 10 - Turquesa / Linha 11 - Coral / Linha 12 - Safira' },
+  { codigo: 18, descricao: 'Sem linha associada' },
+  { codigo: 19, descricao: 'Linha 07 - Rubi / Linha 08 - Diamante / Linha 09 - Esmeralda / Linha 10 - Turquesa / Linha 11 - Coral / Linha 12 - Safira' },
+  { codigo: 20, descricao: 'Linha 13 - Jade' },
+  { codigo: 21, descricao: 'Linha 05 - Lilás' },
+  { codigo: 22, descricao: 'Linha 11 - Coral / Linha 12 - Safira / 13 - Jade' },
+  { codigo: 23, descricao: 'Linha 10 - Turquesa / Linha 11 - Coral / Linha 12 - Safira / Linha 13 - Jade' },
+  { codigo: 24, descricao: 'Linha 07 - Rubi / Linha 10 - Turquesa' },
+  { codigo: 25, descricao: 'Linha JJ - Baixada Santista' },
+  { codigo: 26, descricao: 'Linha 09 - Esmeralda / Linha 05 - Lilás' },
+  { codigo: 27, descricao: 'Linha 07 - Rubi / Linha 08 - Diamante / Linha 09 - Esmeralda / Linha 12 - Safira' },
+  { codigo: 28, descricao: 'Linha 07 - Rubi / Linha 12 - Safira' },
+  { codigo: 29, descricao: 'Linha 07 - Rubi / Linha 09 - Esmeralda' },
+  { codigo: 30, descricao: 'Linha 08 - Diamante / Linha 10 - Turquesa / Linha 11 - Coral / Linha 12 - Safira' },
+  { codigo: 31, descricao: 'Linha 08 - Diamante / Linha 09 - Esmeralda / Linha 10 - Turquesa / Linha 11 - Coral / Linha 12 - Safira / Linha JJ - Baixada Santista' },
+  { codigo: 32, descricao: 'Linha não informada' },
+  { codigo: 33, descricao: 'Linha 12 - Safira/ Linha 13 - Jade' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const viaOptions = ref([
+  { codigo: 1, descricao: 'Via 01' },
+  { codigo: 2, descricao: 'Via 02' },
+  { codigo: 3, descricao: 'Via 03' },
+  { codigo: 4, descricao: 'Via 04' },
+  { codigo: 5, descricao: 'Via 05' },
+  { codigo: 6, descricao: 'Via 06' },
+  { codigo: 7, descricao: 'Via 08' },
+  { codigo: 8, descricao: 'Via 09' },
+  { codigo: 9, descricao: 'Via 10' },
+  { codigo: 10, descricao: 'Via 01S - Trecho 1' },
+  { codigo: 11, descricao: 'Via 01S - Trecho 2' },
+  { codigo: 12, descricao: 'Via 02S - Trecho 1' },
+  { codigo: 13, descricao: 'Via 02S - Trecho 2' },
+  { codigo: 14, descricao: 'Via 03S - Trecho 2' },
+  { codigo: 15, descricao: 'Via 03E - Trecho 2' },
+  { codigo: 16, descricao: 'Via 04E - Trecho 2' },
+  { codigo: 17, descricao: 'Via Auxiliar' },
+  { codigo: 18, descricao: 'Via Variante' },
+  { codigo: 19, descricao: 'Travessão - AMV' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 99, descricao: 'Indefinido(a)(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
+
+const estacaoOptions = ref([
+  { codigo: 1, descricao: 'Estação Aeroporto Guarulhos' },
+  { codigo: 2, descricao: 'Estação Água Branca' },
+  { codigo: 3, descricao: 'Estação Antonio Gianetti Neto' },
+  { codigo: 4, descricao: 'Estação Antônio João' },
+  { codigo: 5, descricao: 'Estação Aracaré' },
+  { codigo: 6, descricao: 'Estação Autódromo' },
+  { codigo: 7, descricao: 'Estação Baltazar Fidelis' },
+  { codigo: 8, descricao: 'Estação Barueri' },
+  { codigo: 9, descricao: 'Estação Berrini' },
+  { codigo: 10, descricao: 'Estação Botujuru' },
+  { codigo: 11, descricao: 'Estação Brás' },
+  { codigo: 12, descricao: 'Estação Brás Cubas' },
+  { codigo: 13, descricao: 'Estação Caieiras' },
+  { codigo: 14, descricao: 'Estação Calmon Viana' },
+  { codigo: 15, descricao: 'Estação Campo Limpo Paulista' },
+  { codigo: 16, descricao: 'Estação Capuava' },
+  { codigo: 17, descricao: 'Estação Carapicuíba' },
+  { codigo: 18, descricao: 'Estação Ceasa' },
+  { codigo: 19, descricao: 'Estação Cidade Jardim' },
+  { codigo: 20, descricao: 'Estação Cidade Universitária' },
+  { codigo: 21, descricao: 'Estação Comandante Sampaio' },
+  { codigo: 22, descricao: 'Estação Comendador Ermelino' },
+  { codigo: 23, descricao: 'Estação Corinthians - Itaquera' },
+  { codigo: 24, descricao: 'Estação Dom Bosco' },
+  { codigo: 25, descricao: 'Estação Domingos de Morais' },
+  { codigo: 26, descricao: 'Estação Engenheiro Cardoso' },
+  { codigo: 27, descricao: 'Estação Engenheiro Goulart' },
+  { codigo: 28, descricao: 'Estação Engenheiro Manoel Feio' },
+  { codigo: 29, descricao: 'Estação Estudantes' },
+  { codigo: 30, descricao: 'Estação Ferraz de Vasconcelos' },
+  { codigo: 31, descricao: 'Estação Francisco Morato' },
+  { codigo: 32, descricao: 'Estação Franco da Rocha' },
+  { codigo: 33, descricao: 'Estação General Miguel Costa' },
+  { codigo: 34, descricao: 'Estação Grajaú' },
+  { codigo: 35, descricao: 'Estação Granja Julieta' },
+  { codigo: 36, descricao: 'Estação Guaianazes' },
+  { codigo: 37, descricao: 'Estação Guapituba' },
+  { codigo: 38, descricao: 'Estação Guarulhos Cecap' },
+  { codigo: 39, descricao: 'Estação Hebraica - Rebouças' },
+  { codigo: 40, descricao: 'Estação Imperatriz Leopoldina' },
+  { codigo: 41, descricao: 'Estação Ipiranga' },
+  { codigo: 42, descricao: 'Estação Itaim Paulista' },
+  { codigo: 43, descricao: 'Estação Itapevi' },
+  { codigo: 44, descricao: 'Estação Itaquaquecetuba' },
+  { codigo: 45, descricao: 'Estação Jandira' },
+  { codigo: 46, descricao: 'Estação Jaraguá' },
+  { codigo: 47, descricao: 'Estação Jardim Belval' },
+  { codigo: 48, descricao: 'Estação Jardim Helena - Vila Mara' },
+  { codigo: 49, descricao: 'Estação Jardim Romano' },
+  { codigo: 50, descricao: 'Estação Jardim Silveira' },
+  { codigo: 51, descricao: 'Estação João Dias' },
+  { codigo: 52, descricao: 'Estação José Bonifácio' },
+  { codigo: 53, descricao: 'Estação Júlio Prestes' },
+  { codigo: 54, descricao: 'Estação Jundiaí' },
+  { codigo: 55, descricao: 'Estação Jundiapeba' },
+  { codigo: 56, descricao: 'Estação Jurubatuba' },
+  { codigo: 57, descricao: 'Estação Lapa (Linha 7)' },
+  { codigo: 58, descricao: 'Estação Lapa (Linha 8)' },
+  { codigo: 59, descricao: 'Estação Luz' },
+  { codigo: 60, descricao: 'Estação Mauá' },
+  { codigo: 61, descricao: 'Estação Mendes / Bruno Covas' },
+  { codigo: 62, descricao: 'Estação Mogi das Cruzes' },
+  { codigo: 63, descricao: 'Estação Móoca' },
+  { codigo: 64, descricao: 'Estação Morumbi' },
+  { codigo: 65, descricao: 'Estação Osasco' },
+  { codigo: 66, descricao: 'Estação Palmeiras - Barra Funda' },
+  { codigo: 67, descricao: 'Estação Parada Amador Bueno' },
+  { codigo: 68, descricao: 'Estação Perus' },
+  { codigo: 69, descricao: 'Estação Pinheiros' },
+  { codigo: 70, descricao: 'Estação Piqueri' },
+  { codigo: 71, descricao: 'Estação Pirituba' },
+  { codigo: 72, descricao: 'Estação Poá' },
+  { codigo: 73, descricao: 'Estação Prefeito Celso Daniel - Santo André' },
+  { codigo: 74, descricao: 'Estação Prefeito Saladino' },
+  { codigo: 75, descricao: 'Estação Presidente Altino' },
+  { codigo: 76, descricao: 'Estação Primavera - Interlagos' },
+  { codigo: 77, descricao: 'Estação Quitaúna' },
+  { codigo: 78, descricao: 'Estação Ribeirão Pires' },
+  { codigo: 79, descricao: 'Estação Rio Grande da Serra' },
+  { codigo: 80, descricao: 'Estação Sagrado Coração' },
+  { codigo: 81, descricao: 'Estação Santa Rita' },
+  { codigo: 82, descricao: 'Estação Santa Terezinha' },
+  { codigo: 83, descricao: 'Estação Santo Amaro (Linha 9)' },
+  { codigo: 84, descricao: 'Estação São Caetano' },
+  { codigo: 85, descricao: 'Estação São Miguel Paulista' },
+  { codigo: 86, descricao: 'Estação Socorro' },
+  { codigo: 87, descricao: 'Estação Suzano' },
+  { codigo: 88, descricao: 'Estação Tamanduateí' },
+  { codigo: 89, descricao: 'Estação Tatuapé' },
+  { codigo: 90, descricao: 'Estação USP Leste' },
+  { codigo: 91, descricao: 'Estação Utinga' },
+  { codigo: 92, descricao: 'Estação Várzea Paulista' },
+  { codigo: 93, descricao: 'Estação Vila Aurora' },
+  { codigo: 94, descricao: 'Estação Vila Clarice' },
+  { codigo: 95, descricao: 'Estação Vila Olímpia' },
+  { codigo: 96, descricao: 'Estação Villa-Lobos - Jaguaré' },
+  { codigo: 997, descricao: 'Não se aplica(m)' },
+  { codigo: 998, descricao: 'Inexistente(s)' },
+  { codigo: 999, descricao: 'Indefinido(a)(s)' },
+  { codigo: 1000, descricao: 'Não avaliado(a)(s)' }
+])
+
+const trechoOptions = ref([
+  { codigo: 62, descricao: 'Estação Aeroporto Guarulhos - Estação Guarulhos - Cecap' },
+  { codigo: 126, descricao: 'Estação Aeroporto Guarulhos - Final dos Trilhos' },
+  { codigo: 38, descricao: 'Estação Água Branca - Estação Lapa' },
+  { codigo: 40, descricao: 'Estação Água Branca - Estação Lapa (Linha 07)' },
+  { codigo: 118, descricao: 'Estação Água Branca - Estação Palmeiras - Barra Funda' },
+  { codigo: 107, descricao: 'Estação Antônio Gianetti Neto - Estação Ferraz de Vasconcelos' },
+  { codigo: 41, descricao: 'Estação Antônio Gianetti Neto - Estação Guaianazes' },
+  { codigo: 84, descricao: 'Estação Aracaré - Estação Calmon Viana' },
+  { codigo: 48, descricao: 'Estação Aracaré - Estação de Itaquaquecetuba' },
+  { codigo: 87, descricao: 'Estação Baltazar Fidelis - Estação de Franco da Rocha' },
+  { codigo: 23, descricao: 'Estação Baltazar Fidelis - Estação Francisco Morato' },
+  { codigo: 117, descricao: 'Estação Barra Funda - Estação Luz' },
+  { codigo: 51, descricao: 'Estação Botujuru - Estação Campo Limpo Paulista' },
+  { codigo: 85, descricao: 'Estação Botujuru - Estação Francisco Morato' },
+  { codigo: 13, descricao: 'Estação Brás Cubas - Estação Jundiapeba' },
+  { codigo: 77, descricao: 'Estação Brás Cubas - Estação Mogi das Cruzes' },
+  { codigo: 25, descricao: 'Estação Caieiras - Estação Franco da Rocha' },
+  { codigo: 89, descricao: 'Estação Caieiras - Estação Perus' },
+  { codigo: 21, descricao: 'Estação Calmon Viana - Estação Aracaré' },
+  { codigo: 45, descricao: 'Estação Calmon Viana - Estação Poá' },
+  { codigo: 74, descricao: 'Estação Calmon Viana - Estação Suzano' },
+  { codigo: 114, descricao: 'Estação Campo Limpo Paulista - Estação Botujuru' },
+  { codigo: 50, descricao: 'Estação Campo Limpo Paulista - Estação Várzea Paulista' },
+  { codigo: 67, descricao: 'Estação Capuava - Estação Mauá' },
+  { codigo: 3, descricao: 'Estação Capuava - Estação Santo André' },
+  { codigo: 81, descricao: 'Estação Com. Ermelino Matarazzo - Estação São Miguel Paulista' },
+  { codigo: 58, descricao: 'Estação Comendador Ermelino Matarazzo - Estação USP Leste' },
+  { codigo: 120, descricao: 'Estação Corinthians - Itaquera - Estação Dom Bosco' },
+  { codigo: 9, descricao: 'Estação Corinthians - Itaquera - Estação Tatuapé' },
+  { codigo: 97, descricao: 'Estação da Mooca - Estação Ipiranga' },
+  { codigo: 33, descricao: 'Estação da Mooca - Estação Roosevelt/Brás' },
+  { codigo: 24, descricao: 'Estação de Franco da Rocha - Estação Baltazar Fidelis' },
+  { codigo: 111, descricao: 'Estação de Itaquaquecetuba - Estação Aracaré' },
+  { codigo: 47, descricao: 'Estação de Itaquaquecetuba - Estação Engenheiro Manoel Feio' },
+  { codigo: 8, descricao: 'Estação de Paranapiacaba - Estação Rio Grande da Serra' },
+  { codigo: 106, descricao: 'Estação de Paranapiacaba - Final dos Trilhos' },
+  { codigo: 57, descricao: 'Estação Dom Bosco - Estação Corinthians - Itaquera' },
+  { codigo: 73, descricao: 'Estação Dom Bosco - Estação José Bonifácio' },
+  { codigo: 124, descricao: 'Estação Engenheiro Goulart - Estação Guarulhos - Cecap' },
+  { codigo: 20, descricao: 'Estação Engenheiro Goulart - Estação Tatuapé' },
+  { codigo: 82, descricao: 'Estação Engenheiro Goulart - Estação USP Leste' },
+  { codigo: 110, descricao: 'Estação Engenheiro Manoel Feio - Estação de Itaquaquecetuba' },
+  { codigo: 60, descricao: 'Estação Engenheiro Manoel Feio - Estação Jardim Romano' },
+  { codigo: 15, descricao: 'Estação Estudantes - Estação Mogi das Cruzes' },
+  { codigo: 102, descricao: 'Estação Estudantes - Final dos Trilhos' },
+  { codigo: 44, descricao: 'Estação Ferraz de Vasconcelos - Estação Antônio Gianetti Neto' },
+  { codigo: 109, descricao: 'Estação Ferraz de Vasconcelos - Estação Poá' },
+  { codigo: 86, descricao: 'Estação Francisco Morato - Estação Baltazar Fidelis' },
+  { codigo: 22, descricao: 'Estação Francisco Morato - Estação Botujuru' },
+  { codigo: 88, descricao: 'Estação Franco da Rocha - Estação Caieiras' },
+  { codigo: 104, descricao: 'Estação Guaianazes - Estação Antônio Gianetti Neto' },
+  { codigo: 42, descricao: 'Estação Guaianazes - Estação José Bonifácio' },
+  { codigo: 5, descricao: 'Estação Guapituba - Estação Mauá' },
+  { codigo: 69, descricao: 'Estação Guapituba - Estação Ribeirão Pires' },
+  { codigo: 125, descricao: 'Estação Guarulhos - Cecap - Estação Aeroporto Guarulhos' },
+  { codigo: 61, descricao: 'Estação Guarulhos - Cecap - Estação Engenheiro Goulart' },
+  { codigo: 34, descricao: 'Estação Ipiranga - Estação da Mooca' },
+  { codigo: 98, descricao: 'Estação Ipiranga - Estação Tamanduateí' },
+  { codigo: 59, descricao: 'Estação Itaim Paulista - Estação Jardim Helena - Vila Mara' },
+  { codigo: 79, descricao: 'Estação Itaim Paulista - Estação Jardim Romano' },
+  { codigo: 56, descricao: 'Estação Jaraguá - Estação Vila Aurora' },
+  { codigo: 91, descricao: 'Estação Jaraguá - Estação Vila Clarisse' },
+  { codigo: 122, descricao: 'Estação Jardim Helena - Vila Mara - Estação Itaim Paulista' },
+  { codigo: 17, descricao: 'Estação Jardim Helena - Vila Mara - Estação São Miguel Paulista' },
+  { codigo: 123, descricao: 'Estação Jardim Romano - Estação Engenheiro Manoel Feio' },
+  { codigo: 16, descricao: 'Estação Jardim Romano - Estação Itaim Paulista' },
+  { codigo: 10, descricao: 'Estação José Bonifácio - Estação Dom Bosco' },
+  { codigo: 105, descricao: 'Estação José Bonifácio - Estação Guaianazes' },
+  { codigo: 116, descricao: 'Estação Jundiaí - Estação Várzea Paulista' },
+  { codigo: 52, descricao: 'Estação Jundiaí - Final dos Trilhos' },
+  { codigo: 76, descricao: 'Estação Jundiapeba - Estação Brás Cubas' },
+  { codigo: 12, descricao: 'Estação Jundiapeba - Estação Suzano' },
+  { codigo: 101, descricao: 'Estação Lapa - Estação Água Branca' },
+  { codigo: 103, descricao: 'Estação Lapa (Linha 07) - Estação Água Branca' },
+  { codigo: 31, descricao: 'Estação Lapa (Linha 07) - Estação Piqueri' },
+  { codigo: 54, descricao: 'Estação Luz - Estação Barra Funda' },
+  { codigo: 95, descricao: 'Estação Luz - Estação Roosevelt/Brás' },
+  { codigo: 4, descricao: 'Estação Mauá - Estação Capuava' },
+  { codigo: 68, descricao: 'Estação Mauá - Estação Guapituba' },
+  { codigo: 14, descricao: 'Estação Mogi das Cruzes - Estação Brás Cubas' },
+  { codigo: 78, descricao: 'Estação Mogi das Cruzes - Estação Estudantes' },
+  { codigo: 55, descricao: 'Estação Palmeiras - Barra Funda - Estação Água Branca' },
+  { codigo: 26, descricao: 'Estação Perus - Estação Caieiras' },
+  { codigo: 90, descricao: 'Estação Perus - Estação Vila Aurora' },
+  { codigo: 94, descricao: 'Estação Piqueri - Estação Lapa (Linha 07)' },
+  { codigo: 30, descricao: 'Estação Piqueri - Estação Pirituba' },
+  { codigo: 93, descricao: 'Estação Pirituba - Estação Piqueri' },
+  { codigo: 29, descricao: 'Estação Pirituba - Estação Vila Clarisse' },
+  { codigo: 108, descricao: 'Estação Poá - Estação Calmon Viana' },
+  { codigo: 46, descricao: 'Estação Poá - Estação Ferraz de Vasconcelos' },
+  { codigo: 65, descricao: 'Estação Prefeito Saladino - Estação Santo André' },
+  { codigo: 1, descricao: 'Estação Prefeito Saladino - Estação Utinga' },
+  { codigo: 6, descricao: 'Estação Ribeirão Pires - Estação Guapituba' },
+  { codigo: 70, descricao: 'Estação Ribeirão Pires - Estação Rio Grande da Serra' },
+  { codigo: 71, descricao: 'Estação Rio Grande da Serra - Estação de Paranapiacaba' },
+  { codigo: 7, descricao: 'Estação Rio Grande da Serra - Estação Ribeirão Pires' },
+  { codigo: 96, descricao: 'Estação Roosevelt/Brás - Estação da Mooca' },
+  { codigo: 32, descricao: 'Estação Roosevelt/Brás - Estação Luz' },
+  { codigo: 112, descricao: 'Estação Roosevelt/Brás - Estação Tatuapé' },
+  { codigo: 66, descricao: 'Estação Santo André - Estação Capuava' },
+  { codigo: 2, descricao: 'Estação Santo André - Estação Prefeito Saladino' },
+  { codigo: 36, descricao: 'Estação São Caetano - Estação Tamanduateí' },
+  { codigo: 100, descricao: 'Estação São Caetano - Estação Utinga' },
+  { codigo: 18, descricao: 'Estação São Miguel Paulista - Estação Com. Ermelino Matarazzo' },
+  { codigo: 80, descricao: 'Estação São Miguel Paulista - Estação Jardim Helena - Vila Mara' },
+  { codigo: 11, descricao: 'Estação Suzano - Estação Calmon Viana' },
+  { codigo: 75, descricao: 'Estação Suzano - Estação Jundiapeba' },
+  { codigo: 35, descricao: 'Estação Tamanduateí - Estação Ipiranga' },
+  { codigo: 99, descricao: 'Estação Tamanduateí - Estação São Caetano' },
+  { codigo: 72, descricao: 'Estação Tatuapé - Estação Corinthians - Itaquera' },
+  { codigo: 83, descricao: 'Estação Tatuapé - Estação Engenheiro Goulart' },
+  { codigo: 49, descricao: 'Estação Tatuapé - Estação Roosevelt/Brás' },
+  { codigo: 121, descricao: 'Estação USP Leste - Estação Comendador Ermelino Matarazzo' },
+  { codigo: 19, descricao: 'Estação USP Leste - Estação Engenheiro Goulart' },
+  { codigo: 64, descricao: 'Estação Utinga - Estação Prefeito Saladino' },
+  { codigo: 37, descricao: 'Estação Utinga - Estação São Caetano' },
+  { codigo: 113, descricao: 'Estação Várzea Paulista - Estação Campo Limpo Paulista' },
+  { codigo: 53, descricao: 'Estação Várzea Paulista - Estação Jundiaí' },
+  { codigo: 119, descricao: 'Estação Vila Aurora - Estação Jaraguá' },
+  { codigo: 27, descricao: 'Estação Vila Aurora - Estação Perus' },
+  { codigo: 28, descricao: 'Estação Vila Clarisse - Estação Jaraguá' },
+  { codigo: 92, descricao: 'Estação Vila Clarisse - Estação Pirituba' },
+  { codigo: 63, descricao: 'Final dos Trilhos - Estação Aeroporto Guarulhos' },
+  { codigo: 43, descricao: 'Final dos Trilhos - Estação de Paranapiacaba' },
+  { codigo: 39, descricao: 'Final dos Trilhos - Estação Estudantes' },
+  { codigo: 115, descricao: 'Final dos Trilhos - Estação Jundiaí' },
+  { codigo: 997, descricao: 'Não se aplica(m)' },
+  { codigo: 998, descricao: 'Inexistente(s)' },
+  { codigo: 999, descricao: 'Indefinido(a)(s)' },
+  { codigo: 1000, descricao: 'Não avaliado(a)(s)' }
+])
+
+const proprietarioOptions = ref([
+  { codigo: 1, descricao: 'CPTM - Titularidade' },
+  { codigo: 2, descricao: 'CPTM - Posse' },
+  { codigo: 3, descricao: 'Metrô' },
+  { codigo: 4, descricao: 'Alienado' },
+  { codigo: 5, descricao: 'MRS' },
+  { codigo: 6, descricao: 'RFSA' },
+  { codigo: 7, descricao: 'RFSA/SPU' },
+  { codigo: 8, descricao: 'CBTU' },
+  { codigo: 9, descricao: 'Pessoa Jurídica' },
+  { codigo: 10, descricao: 'Pessoa Física' },
+  { codigo: 11, descricao: 'Indefinido' },
+  { codigo: 13, descricao: 'FEPASA' },
+  { codigo: 14, descricao: 'Permuta' },
+  { codigo: 15, descricao: 'Prefeitura de Guarulhos' },
+  { codigo: 16, descricao: 'DAEE' },
+  { codigo: 18, descricao: 'USP Leste' },
+  { codigo: 19, descricao: 'GRU - Aeroporto' },
+  { codigo: 20, descricao: 'CCR - Rodovia Dutra' },
+  { codigo: 21, descricao: 'Ecopistas' },
+  { codigo: 22, descricao: 'CDHU' },
+  { codigo: 97, descricao: 'Não se aplica(m)' },
+  { codigo: 98, descricao: 'Inexistente(s)' },
+  { codigo: 100, descricao: 'Não avaliado(a)(s)' }
+])
 
 const institutionalFields = [
   { key: 'txNomePjDaContratada', label: 'Nome (Pesso Jurídica) da Contratada', help: 'Inserir o nome e sigla da Contratada. Separar nome e sigla por " - ". A sigla pode conter até 10 caracteres, maiúsculos e sem espaços.', example: 'Companhia Paulista de Trens Metropolitanos S.A. - CPTM', wide: true },
   { key: 'txNrContratoContratada', label: 'Nº do Contrato (da Contratada)', help: 'Inserir o identificador do contrato da Contratada, se aplicável. Padrão: Número/Código com até 12 caracteres e sem espaços.', example: 'AR01234-56' },
   { key: 'txNmLocalEscopoContratual', label: 'Local do Escopo Contratual (Pseudônimo)', help: 'Indicar um nome genérico para o local do escopo contratual ou área/trecho da CPTM.', example: 'Pátio Capuava' },
   { key: 'txNomePfDaRepresentante', label: 'Representante (PF) da Contratada e/ou Área Gestora da CPTM', help: 'Inserir o nome do responsável interlocutor da Contratada e/ou da Área Gestora da CPTM para assuntos de meio ambiente, utilizando no máximo 89 caracteres.', example: 'Pessoa 1 / Pessoa 2', wide: true },
-  { key: 'txSiglaDeptoMeioAmbiente', label: 'Sigla da Área de Meio Ambiente', type: 'select', options: siglaMeioAmbienteOptions, help: 'Escolher a sigla do departamento interlocutor da Gerência de Meio Ambiente - GEA. Utilizar menu suspenso.', example: 'GEA.DEAE' },
-  { key: 'txNmAreaGestoraCptm', label: 'Nome da Área Gestora CPTM', type: 'select', options: areaGestoraOptions, help: 'Escolher área gestora da CPTM, se aplicável. Utilizar menu suspenso.', example: 'DEPTO. DE MANUT. DE SISTEMAS ELETR. E RESTAB. DE SERVICOS', wide: true },
+  { key: 'txSiglaDeptoMeioAmbiente', label: 'Sigla da Área de Meio Ambiente', type: 'select', options: siglaMeioAmbienteOptions, help: 'Escolher a sigla do departamento interlocutor da Gerência de Meio Ambiente - GEA.', example: 'GEA.DEAE' },
+  { key: 'txNmAreaGestoraCptm', label: 'Nome da Área Gestora CPTM', type: 'select', options: areaGestoraOptions, help: 'Escolher área gestora da CPTM, se aplicável.', example: 'DEPTO. DE MANUT. DE SISTEMAS ELETR. E RESTAB. DE SERVICOS', wide: true },
   { key: 'txIdAreaGestoraCptm', label: 'Indentificador da Área Gestora CPTM', help: 'Campo Automático', example: 'ID.10-15-5-3-0000', readonly: true },
   { key: 'txSiglaAreaGestoraCptm', label: 'Sigla da Área Gestora CPTM', help: 'Campo Automático', example: 'DO.GOT.DOTV.1000', readonly: true },
   { key: 'txNomePjDaSupervisora', label: 'Nome (PJ) da Supervisora Ambiental', help: 'Inserir o nome e sigla da Supervisora Ambiental, utilizando no máximo 89 caracteres. Quando a Supervisora for a própria CPTM repetir a gerência e departamento ambiental informados anteriormente.', example: 'Empresa de Supervisão Ambiental Ltda. - ESA', wide: true }
@@ -474,7 +1045,9 @@ const registrationDateTimeFields = [
 const monitoredElementFields = [
   { key: 'pkCdMeioAmbienteCptm', label: 'Chave Primária - Meio Ambiente', help: 'Campo Automático', example: 'EEA.EF-A.2026-L.07-CPTM-N.000001', readonly: true, wide: true },
   { key: 'txNrElementoMonitoramento', label: 'Elemento de Monitoramento - Número', min: 1, max: 999999, inputmode: 'numeric', help: 'Inserir o número do elemento monitorado. Escolher de 1 a 999.999. Digitar apenas números. O número deve ser sequencial, não replicável e com seis unidades. Exibição final: N.000001.', example: '1' },
-  { key: 'txNmElementoMonitoramento', label: 'Elemento de Monitoramento - Nome', help: 'Indicar um nome genérico para o elemento de monitoramento.', example: 'Plataforma 1' }
+  { key: 'txNmElementoMonitoramento', label: 'Elemento de Monitoramento - Nome', help: 'Indicar um nome genérico para o elemento de monitoramento.', example: 'Plataforma 1' },
+  { key: 'txStatusDoRegistroNoBd', label: 'Status do Registro no BD', type: 'select', options: statusRegistroOptions, help: 'Indica se o registro está ativo ou inativo no banco de dados.', example: 'Ativo' },
+  { key: 'txStatusDoDesvioAmbiental', label: 'Status do Desvio Ambiental', type: 'select', options: statusDesvioOptions, help: 'Indica a situação de regularidade ambiental do desvio.', example: 'Regularizado' }
 ]
 
 const locationFields = [
@@ -489,9 +1062,9 @@ const locationFields = [
 ]
 
 const environmentalRegulationFields = [
-  { key: 'txTipoAtividadeListada', label: 'Tipo de Atividade (Listada)', type: 'select', options: outroOptions, help: 'Selecionar o tipo de atividade relacionada ao elemento de monitoramento. Utilizar lista suspensa.', example: 'Outro(a)(s)' },
+  { key: 'txTipoAtividadeListada', label: 'Tipo de Atividade (Listada)', type: 'select', options: tipoAtividadeListadaOptions, help: 'Selecionar o tipo de atividade relacionada ao elemento de monitoramento.', example: 'Outro(a)(s)' },
   { key: 'txTipoAtividadeNListada', label: 'Tipo de Atividade (Não Listada)', help: 'Inserir o tipo de atividade não listada quando "Tipo de Atividade (Listada)" for "Outro(a)(s)".', example: 'Transporte' },
-  { key: 'txTipoDraListado', label: 'Tipo de DRA (Listado)', type: 'select', options: outroOptions, help: 'Selecionar o tipo de DRA relacionado ao elemento de monitoramento. Utilizar lista suspensa.', example: 'Outro(a)(s)' },
+  { key: 'txTipoDraListado', label: 'Tipo de DRA (Listado)', type: 'select', options: tipoDraListadoOptions, help: 'Selecionar o tipo de DRA relacionado ao elemento de monitoramento.', example: 'Outro(a)(s)' },
   { key: 'txTipoDraNListado', label: 'Tipo de DRA (Não Listado)', help: 'Inserir o tipo de DRA não listado quando "Tipo de DRA (Listado)" for "Outro(a)(s)".', example: 'Teste' },
   { key: 'txIdDra', label: 'Código Identificador do DRA', help: 'Inserir o código identificador do DRA.', example: 'DRF nº 123.456' },
   { key: 'dtValidadeDra', label: 'Data de Validade do DRA', type: 'date', help: 'Inserir a data de validade do DRA. Padrão: dd/mm/aaaa.', example: '01/01/2001' }
@@ -556,11 +1129,27 @@ const reviewGroups = computed(() => [
   { title: '7.2. Detalhamento', fields: detailFields }
 ])
 
+// Automação de campos derivada do domínio de Área Gestora
+watch(() => form.txNmAreaGestoraCptm, (newVal) => {
+  const option = areaGestoraOptions.value.find(o => o.codigo === newVal)
+  if (option) {
+    const desc = option.descricao || ''
+    const siglaMatch = desc.match(/\(([^)]+)\)/)
+    const idMatch = desc.match(/\[([^\]]+)\]/)
+
+    form.txSiglaAreaGestoraCptm = siglaMatch ? siglaMatch[1] : ''
+    form.txIdAreaGestoraCptm = idMatch ? idMatch[1] : ''
+  }
+})
+
 function getFieldOptions(field) {
-  const options = Array.isArray(field?.options) ? field.options : []
+  const options = Array.isArray(field?.options?.value) ? field.options.value : []
   const currentValue = form[field?.key]
 
-  if (!currentValue || options.includes(currentValue)) return options
+  // Verifica se o valor atual (codigo) existe nas opções
+  if (!currentValue || options.some(o => o.codigo === currentValue)) return options
+
+  // Fallback caso o valor não exista (ex: rascunho antigo)
   return [currentValue, ...options]
 }
 
@@ -709,7 +1298,7 @@ async function findLatestInspectionForCurrentElement() {
 
   return sameElementCandidates
     .sort((a, b) => getInspectionRecencyTime(b) - getInspectionRecencyTime(a))
-    [0]
+  [0]
 }
 
 async function findFirstInspectionForTemplate() {
@@ -718,7 +1307,7 @@ async function findFirstInspectionForTemplate() {
 
   return candidates
     .sort((a, b) => getInspectionTemplateTime(a) - getInspectionTemplateTime(b))
-    [0]
+  [0]
 }
 
 async function getInspectionCopyCandidates() {
@@ -1181,15 +1770,15 @@ async function handleSubmitEfluente() {
     const filesToSend = selectedFiles.value.map(attachmentRecordToFile).filter(Boolean)
     const response = filesToSend.length
       ? (
-          mode === 'edit'
-            ? await updateEfluenteMultipartAPI(pkCdMeioAmbienteCptm, payload, filesToSend)
-            : await createEfluenteMultipartAPI(payload, filesToSend)
-        )
+        mode === 'edit'
+          ? await updateEfluenteMultipartAPI(pkCdMeioAmbienteCptm, payload, filesToSend)
+          : await createEfluenteMultipartAPI(payload, filesToSend)
+      )
       : (
-          mode === 'edit'
-            ? await updateEfluenteAPI(pkCdMeioAmbienteCptm, payload)
-            : await createEfluenteAPI(payload)
-        )
+        mode === 'edit'
+          ? await updateEfluenteAPI(pkCdMeioAmbienteCptm, payload)
+          : await createEfluenteAPI(payload)
+      )
     const pk = extractPk(response, payload)
       || (mode === 'edit' ? pkCdMeioAmbienteCptm : '')
     if (!pk) throw new Error('Sistema central nao retornou o ID do registro')
@@ -1426,8 +2015,14 @@ function formatBytes(value) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-function displayValue(value) {
-  return value === '' || value === null || value === undefined ? 'Nao informado' : value
+function displayValue(field, value) {
+  if (value === '' || value === null || value === undefined) return 'Nao informado'
+  if (field.type === 'select') {
+    const options = getFieldOptions(field)
+    const found = options.find(o => o.codigo === value)
+    return found ? found.descricao : value
+  }
+  return value
 }
 
 function clearAttachmentPreview() {
@@ -1652,7 +2247,7 @@ function returnToMain() {
   min-width: 0;
 }
 
-.field-label-row > span {
+.field-label-row>span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
