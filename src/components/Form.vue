@@ -418,8 +418,8 @@ const monitoredElementFields = [
   { key: 'pkCdMeioAmbienteCptm', label: 'Chave Primária - Meio Ambiente', help: 'Campo Automático', example: 'EEA.EF-A.2026-L.07-CPTM-N.000001', readonly: true, wide: true },
   { key: 'txNrElementoMonitoramento', label: 'Elemento de Monitoramento - Número', min: 1, max: 999999, inputmode: 'numeric', help: 'Inserir o número do elemento monitorado. Escolher de 1 a 999.999. Digitar apenas números. O número deve ser sequencial, não replicável e com seis unidades. Exibição final: N.000001.', example: '1' },
   { key: 'txNmElementoMonitoramento', label: 'Elemento de Monitoramento - Nome', help: 'Indicar um nome genérico para o elemento de monitoramento.', example: 'Plataforma 1' },
-  { key: 'txStatusDoRegistroNoBd', label: 'Status do Registro no BD', type: 'select', options: statusRegistroOptions, help: 'Indica se o registro está ativo ou inativo no banco de dados.', example: 'Ativo' },
-  { key: 'txStatusDoDesvioAmbiental', label: 'Status do Desvio Ambiental', type: 'select', options: statusDesvioOptions, help: 'Indica a situação de regularidade ambiental do desvio.', example: 'Regularizado' }
+  { key: 'txStatusDoRegistroNoBd', label: 'Status do Registro no BD', type: 'select', options: statusRegistroOptions, help: 'Indica se o registro está ativo ou inativo no banco de dados.', example: 'Ativo', readonly: !getIsAdmin() },
+  { key: 'txStatusDoDesvioAmbiental', label: 'Status do Desvio Ambiental', type: 'select', options: statusDesvioOptions, help: 'Indica a situação de regularidade ambiental do desvio.', example: 'Regularizado', readonly: !getIsAdmin() }
 ]
 
 const locationFields = [
@@ -598,6 +598,10 @@ function initializeNewEfluenteDateTime() {
 
   if (!form.dtDataDoCadastramento) form.dtDataDoCadastramento = date
   if (!form.hrHoraDoCadastramento) form.hrHoraDoCadastramento = time
+
+  // Define os valores padrão (1) para campos administrativos em novas inspeções
+  if (!form.txStatusDoRegistroNoBd) form.txStatusDoRegistroNoBd = 1
+  if (!form.txStatusDoDesvioAmbiental) form.txStatusDoDesvioAmbiental = 1
 }
 
 async function applyLatestInspectionData() {
