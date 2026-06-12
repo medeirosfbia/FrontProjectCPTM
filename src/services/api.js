@@ -563,6 +563,10 @@ export async function getEfluenteByPkAPI(pk) {
   return apiFetch(`/efluentes/${encodeURIComponent(pk)}`, { method: 'GET' })
 }
 
+export async function getUltimaInspecaoEfluenteAPI() {
+  return apiFetch('/efluentes/ultima-inspecao', { method: 'GET' })
+}
+
 export async function updateEfluenteAPI(pk, data) {
   return apiFetch(`/efluentes/${encodeURIComponent(pk)}`, { method: 'PUT', body: data })
 }
@@ -680,6 +684,7 @@ export default {
   getEfluentesExcluidosAPI,
   getAdminUsuarioEfluentesAPI,
   getEfluenteByPkAPI,
+  getUltimaInspecaoEfluenteAPI,
   updateEfluenteAPI,
   updateEfluenteMultipartAPI,
   deleteEfluenteAPI,

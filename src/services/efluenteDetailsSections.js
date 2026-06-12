@@ -10,12 +10,15 @@ export const EFLUENTE_DETAILS_SECTIONS = [
       { key: 'txNmAreaGestoraCptm', label: 'Nome da Área Gestora CPTM' },
       { key: 'txIdAreaGestoraCptm', label: 'Indentificador da Área Gestora CPTM' },
       { key: 'txSiglaAreaGestoraCptm', label: 'Sigla da Área Gestora CPTM' },
-      { key: 'txNomePjDaSupervisora', label: 'Nome (PJ) da Supervisora Ambiental' }
+      { key: 'txNomePjDaSupervisora', label: 'Nome (PJ) da Supervisora Ambiental' },
+      { key: 'txNomePjExecutora', label: 'Nome da Empresa Executora' },
+      { key: 'txNrContratoSupervisora', label: 'Nº do Contrato (da Supervisora)' }
     ]
   },
   {
     title: 'Identificação do Cadastrador',
     fields: [
+      { key: 'txAutorPjDoCadastro', label: 'Autor(a) (PJ) do Cadastramento' },
       { key: 'txAutorPfDoCadastro', label: 'Autor(a) (PF) do Cadastramento' },
       { key: 'txNmResponsavelCadastro', label: 'Responsável Técnico - RT pelo Cadastramento' },
       { key: 'txRpResponsavelCadastro', label: 'Registro Profissional (do RT)' },
@@ -31,7 +34,15 @@ export const EFLUENTE_DETAILS_SECTIONS = [
       { key: 'nrNumeroDeFormulario', label: 'Número do Formulário' },
       { key: 'txAutorPfDoFormulario', label: 'Autor(a) (Pessoa Física) do Formulário' },
       { key: 'txNmArquivoFdcRelacionado', label: 'Nome do arquivo FDC relacionado' },
-      { key: 'pkCdArquivoFdcRelacionado', label: 'Código do arquivo FDC relacionoda' }
+      { key: 'pkCdArquivoFdcRelacionado', label: 'Código do arquivo FDC relacionado' },
+      { key: 'txNmArquivoRvtRelacionado', label: 'Nome do arquivo RVT relacionado' },
+      { key: 'pkCdElementoDeMonitorRvt', label: 'Código do E.M. no RVT relacionado' },
+      { key: 'txNmArquivoDacRelacionado', label: 'Nome do arquivo DAC relacionado' },
+      { key: 'pkCdElementoDeMonitorDac', label: 'Código do E.M. na DAC relacionada' },
+      { key: 'txNmArquivoCncRelacionado', label: 'Nome do arquivo CNC relacionado' },
+      { key: 'pkCdElementoDeMonitorCnc', label: 'Código do E.M. na CNC relacionada' },
+      { key: 'pkCdCodigoNoUltimoRra', label: 'Chave Primária no último RRA' },
+      { key: 'pkCdCedoc', label: 'Chave Primária - Centro de Documentação' }
     ]
   },
   {
@@ -60,7 +71,9 @@ export const EFLUENTE_DETAILS_SECTIONS = [
       { key: 'txTrechoESentidoCptm', label: 'Trecho e Sentido da Linha CPTM' },
       { key: 'txKmPoste', label: 'Número do Quilômetro e Poste' },
       { key: 'nrLatGrauDecimalWgs84', label: 'Latitude em Graus (Datum: WGS84)' },
-      { key: 'nrLongGrauDecimalWgs84', label: 'Longitude em Graus (Datum: WGS84)' }
+      { key: 'nrLongGrauDecimalWgs84', label: 'Longitude em Graus (Datum: WGS84)' },
+      { key: 'nrLatMetrosSirgas2000', label: 'Latitude em Metros (Datum: SIRGAS2000)' },
+      { key: 'nrLongMetrosSirgas2000', label: 'Longitude em Metros (Datum: SIRGAS2000)' }
     ]
   },
   {
@@ -71,7 +84,9 @@ export const EFLUENTE_DETAILS_SECTIONS = [
       { key: 'txTipoDraListado', label: 'Tipo de DRA (Listado)' },
       { key: 'txTipoDraNListado', label: 'Tipo de DRA (Não Listado)' },
       { key: 'txIdDra', label: 'Código Identificador do DRA' },
-      { key: 'dtValidadeDra', label: 'Data de Validade do DRA', type: 'date' }
+      { key: 'dtValidadeDra', label: 'Data de Validade do DRA', type: 'date' },
+      { key: 'txAnaliseCptmAprovacao', label: 'Análise CPTM para Aprovação' },
+      { key: 'txOfereceRiscoSistemaCptm', label: 'Oferece Risco ao Sistema CPTM' }
     ]
   },
   {

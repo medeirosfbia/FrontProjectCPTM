@@ -232,11 +232,7 @@
               rascunho</button>
             <button v-if="!isEditMode" type="button" class="btn info" :disabled="copyLastInspectionBusy"
               @click="applyLatestInspectionData">
-              {{ copyLastInspectionBusy ? 'Buscando...' : 'Preencher com ultima inspecao' }}
-            </button>
-            <button v-if="!isEditMode" type="button" class="btn info" :disabled="copyFirstInspectionBusy"
-              @click="applyFirstInspectionData">
-              {{ copyFirstInspectionBusy ? 'Buscando...' : 'Preencher com primeira inspecao' }}
+              {{ copyLastInspectionBusy ? 'Buscando...' : 'Usar dados da última inspeção' }}
             </button>
             <button v-if="!isLastStep" type="button" class="btn-primary" @click="nextStep">Proximo</button>
             <button v-else type="submit" class="btn-primary" :disabled="saving">
@@ -290,14 +286,12 @@ import { deleteInspection, getAllInspections, saveInspection } from '../services
 import {
   createEfluenteAPI,
   createEfluenteMultipartAPI,
-  extractEfluenteItems,
-  getAdminEfluentesAPI,
   getDominiosFormularioEfluenteAPI,
   getEfluenteAnexoBlobAPI,
   getEfluenteAnexosAPI,
   getEfluenteByPkAPI,
   getIsAdmin,
-  getMeusEfluentesAPI,
+  getUltimaInspecaoEfluenteAPI,
   isRetryableApiError,
   updateEfluenteAPI,
   updateEfluenteMultipartAPI
@@ -311,7 +305,6 @@ import {
   createEmptyEfluenteFormData,
   EFLUENTE_FIELD_KEYS,
   getDraftAttachmentRecords,
-  normalizeApiEfluenteListItem,
   mapApiEfluenteToFormData,
   normalizeLocalEfluenteRecord,
   splitAttachmentRecords,
@@ -338,7 +331,6 @@ const selectedFiles = ref([])
 const selectedPreviewUrls = ref([])
 const isDraggingFiles = ref(false)
 const copyLastInspectionBusy = ref(false)
-const copyFirstInspectionBusy = ref(false)
 const isCameraOpen = ref(false)
 const isCameraStarting = ref(false)
 const isCameraCapturing = ref(false)
@@ -357,27 +349,13 @@ let hasRequestedInitialLocation = false
 let statusTimer = null
 let draftLeaveResolve = null
 
-const FIXED_FIELDS_FROM_LAST_INSPECTION = [
-  'txMunicipio',
-  'txLinhaCptm',
-  'txViaCptm',
-  'txTrechoESentidoCptm',
-  'txEstacaoCptm',
-  'nrLatGrauDecimalWgs84',
-  'nrLongGrauDecimalWgs84',
-  'nrLatMetrosSirgas2000',
-  'nrLongMetrosSirgas2000',
-  'txNmResponsavelCadastro',
-  'txRpResponsavelCadastro',
-  'txDrtResponsavelCadastro',
-  'txNomePjDaContratada',
-  'txNrContratoContratada',
-  'txNomePjDaSupervisora',
-  'txNrContratoSupervisora',
-  'txNmAreaGestoraCptm',
-  'txIdAreaGestoraCptm',
-  'txSiglaAreaGestoraCptm'
-]
+const FIELDS_NOT_COPIED_FROM_LAST_INSPECTION = new Set([
+  'pkCdMeioAmbienteCptm',
+  'txNrElementoMonitoramento',
+  'nrNumeroDeFormulario',
+  'dtDataDoCadastramento',
+  'hrHoraDoCadastramento'
+])
 
 const emptyForm = createEmptyEfluenteFormData()
 const form = reactive(createEmptyEfluenteFormData())
@@ -440,10 +418,13 @@ const institutionalFields = [
   { key: 'txNmAreaGestoraCptm', label: 'Nome da Área Gestora CPTM', type: 'domain-select', domainKey: 'areasGestoras', help: 'Escolher área gestora da CPTM, se aplicável.', example: 'DEPTO. DE MANUT. DE SISTEMAS ELETR. E RESTAB. DE SERVICOS', wide: true },
   { key: 'txIdAreaGestoraCptm', label: 'Indentificador da Área Gestora CPTM', help: 'Campo Automático', example: 'ID.10-15-5-3-0000', readonly: true },
   { key: 'txSiglaAreaGestoraCptm', label: 'Sigla da Área Gestora CPTM', help: 'Campo Automático', example: 'DO.GOT.DOTV.1000', readonly: true },
-  { key: 'txNomePjDaSupervisora', label: 'Nome (PJ) da Supervisora Ambiental', help: 'Inserir o nome e sigla da Supervisora Ambiental, utilizando no máximo 89 caracteres. Quando a Supervisora for a própria CPTM repetir a gerência e departamento ambiental informados anteriormente.', example: 'Empresa de Supervisão Ambiental Ltda. - ESA', wide: true }
+  { key: 'txNomePjDaSupervisora', label: 'Nome (PJ) da Supervisora Ambiental', help: 'Inserir o nome e sigla da Supervisora Ambiental, utilizando no máximo 89 caracteres. Quando a Supervisora for a própria CPTM repetir a gerência e departamento ambiental informados anteriormente.', example: 'Empresa de Supervisão Ambiental Ltda. - ESA', wide: true },
+  { key: 'txNomePjExecutora', label: 'Nome da Empresa Executora', help: 'Inserir o nome da empresa executora vinculada ao formulário, se aplicável.', example: 'Empresa Executora Ltda.', wide: true },
+  { key: 'txNrContratoSupervisora', label: 'Nº do Contrato (da Supervisora)', help: 'Inserir o identificador do contrato da Supervisora Ambiental, se aplicável.', example: 'AR01234-56' }
 ]
 
 const cadastrerFields = [
+  { key: 'txAutorPjDoCadastro', label: 'Autor(a) (PJ) do Cadastramento', help: 'Inserir a pessoa jurídica responsável pelo cadastramento/caracterização da informação.', example: 'Companhia Paulista de Trens Metropolitanos S.A. - CPTM', wide: true },
   { key: 'txAutorPfDoCadastro', label: 'Autor(a) (PF) do Cadastramento', help: 'Inserir o nome completo da pessoa que realizou o cadastramento da informação.', example: 'Nome e Sobrenome - Pessoa 4', wide: true },
   { key: 'txNmResponsavelCadastro', label: 'Responsável Técnico - RT pelo Cadastramento', help: 'Inserir o nome completo do(a) responsável técnico(a) pelo cadastramento/caracterização da informação.', example: 'Nome e Sobrenome - Pessoa 5', wide: true },
   { key: 'txRpResponsavelCadastro', label: 'Registro Profissional (do RT)', help: 'Inserir o registro profissional do(a) responsável técnico(a) pelo cadastramento/caracterização da informação.', example: 'CREA - 123456 - Pessoa 5' },
@@ -452,12 +433,20 @@ const cadastrerFields = [
 
 const formIdentificationFields = [
   { key: 'txNaturezaDoPga', label: 'Natureza (do PGA)', type: 'domain-select', domainKey: 'naturezasPga', help: 'Escolher a Natureza correspondente. Utilizar menu suspenso.', example: 'Emissões Atmosféricas' },
-  { key: 'txTipoDeFormulario', label: 'Tipo de Formulário', help: 'Campo Automático', example: 'Formulário de Cadastramento - FDC (FDC-EEA.EF)', readonly: true },
+  { key: 'txTipoDeFormulario', label: 'Tipo de Formulário', help: 'Preencher manualmente até a fórmula automática ser implementada.', example: 'Formulário de Cadastramento - FDC (FDC-EEA.EF)' },
   { key: 'dtDataEmissaoFormulario', label: 'Data de Emissão do Formulário', type: 'date', help: 'Inserir a data de emissão do documento. Padrão: dd/mm/aaaa.', example: '01/01/2001' },
   { key: 'nrNumeroDeFormulario', label: 'Número do Formulário', type: 'number', min: 1, max: 999999, inputmode: 'numeric', help: 'Inserir o número de identificação do formulário. Escolher de 1 a 999.999. Digitar apenas números. O número deve ser sequencial, não replicável e com seis unidades. Exibição final: Nº 000001.', example: '1' },
   { key: 'txAutorPfDoFormulario', label: 'Autor(a) (Pessoa Física) do Formulário', help: 'Definir Explicação', example: 'Pessoa 5' },
-  { key: 'txNmArquivoFdcRelacionado', label: 'Nome do arquivo FDC relacionado', help: 'Campo Automático', example: 'DeaoCtAr01823-02FdcEeaEfL10ProgaiaN000001', readonly: true, wide: true },
-  { key: 'pkCdArquivoFdcRelacionado', label: 'Código do arquivo FDC relacionoda', help: 'Campo Automático', example: 'FDC-EEA.EF-A.2026-L.07-CPTM-N.000001', readonly: true, wide: true }
+  { key: 'txNmArquivoFdcRelacionado', label: 'Nome do arquivo FDC relacionado', help: 'Preencher manualmente até a fórmula automática ser implementada.', example: 'DeaoCtAr01823-02FdcEeaEfL10ProgaiaN000001', wide: true },
+  { key: 'pkCdArquivoFdcRelacionado', label: 'Código do arquivo FDC relacionado', help: 'Preencher manualmente até a fórmula automática ser implementada.', example: 'FDC-EEA.EF-A.2026-L.07-CPTM-N.000001', wide: true },
+  { key: 'txNmArquivoRvtRelacionado', label: 'Nome do arquivo RVT relacionado', help: 'Inserir o nome do arquivo RVT relacionado, se aplicável.', example: 'DeaeCt086020000100A2024Rvt018L07.pdf', wide: true },
+  { key: 'pkCdElementoDeMonitorRvt', label: 'Código do E.M. no RVT relacionado', help: 'Inserir o código do elemento de monitoramento no RVT relacionado, se aplicável.', example: 'RVT-EEA.EF-A.2026-L.07-CPTM-N.000001', wide: true },
+  { key: 'txNmArquivoDacRelacionado', label: 'Nome do Arquivo DAC relacionado', help: 'Inserir o nome do arquivo DAC relacionado, se aplicável.', example: 'DeaeCt086020000100A2024Dac018L07.pdf', wide: true },
+  { key: 'pkCdElementoDeMonitorDac', label: 'Código do E.M. na DAC relacionada', help: 'Inserir o código do elemento de monitoramento na DAC relacionada, se aplicável.', example: 'DAC-EEA.EF-A.2026-L.07-CPTM-N.000001', wide: true },
+  { key: 'txNmArquivoCncRelacionado', label: 'Nome do Arquivo CNC relacionado', help: 'Inserir o nome do arquivo CNC relacionado, se aplicável.', example: 'DeaeCt086020000100A2024Cnc018L07.pdf', wide: true },
+  { key: 'pkCdElementoDeMonitorCnc', label: 'Código do E.M. na CNC relacionada', help: 'Inserir o código do elemento de monitoramento na CNC relacionada, se aplicável.', example: 'CNC-EEA.EF-A.2026-L.07-CPTM-N.000001', wide: true },
+  { key: 'pkCdCodigoNoUltimoRra', label: 'Chave Primária no último RRA', help: 'Inserir a chave primária do último RRA relacionado, se aplicável.', example: 'RRA-EEA.EF-A.2026-L.07-CPTM-N.000001', wide: true },
+  { key: 'pkCdCedoc', label: 'Chave Primária - Centro de Documentação', help: 'Inserir a chave primária do Centro de Documentação, se aplicável.', example: 'CEDOC-000001', wide: true }
 ]
 
 const registrationDateTimeFields = [
@@ -466,7 +455,7 @@ const registrationDateTimeFields = [
 ]
 
 const monitoredElementFields = [
-  { key: 'pkCdMeioAmbienteCptm', label: 'Chave Primária - Meio Ambiente', help: 'Campo Automático', example: 'EEA.EF-A.2026-L.07-CPTM-N.000001', readonly: true, wide: true },
+  { key: 'pkCdMeioAmbienteCptm', label: 'Chave Primária - Meio Ambiente', help: 'Preencher manualmente até a fórmula automática ser implementada.', example: 'EEA.EF-A.2026-L.07-CPTM-N.000001', wide: true },
   { key: 'txNrElementoMonitoramento', label: 'Elemento de Monitoramento - Número', min: 1, max: 999999, inputmode: 'numeric', help: 'Inserir o número do elemento monitorado. Escolher de 1 a 999.999. Digitar apenas números. O número deve ser sequencial, não replicável e com seis unidades. Exibição final: N.000001.', example: '1' },
   { key: 'txNmElementoMonitoramento', label: 'Elemento de Monitoramento - Nome', help: 'Indicar um nome genérico para o elemento de monitoramento.', example: 'Plataforma 1' },
   { key: 'txStatusDoRegistroNoBd', label: 'Status do Registro no BD', type: 'domain-select', domainKey: 'statusRegistroBd', help: 'Indica se o registro está ativo ou inativo no banco de dados.', example: 'Ativo', readonly: !getIsAdmin() },
@@ -481,7 +470,9 @@ const locationFields = [
   { key: 'txTrechoESentidoCptm', label: 'Trecho e Sentido da Linha CPTM', type: 'domain-select', domainKey: 'trechosSentidos', help: 'Selecionar o trecho e sentido da via na qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Estação Antônio Gianetti Neto - Estação Ferraz de Vasconcelos', wide: true },
   { key: 'txKmPoste', label: 'Número do Quilômetro e Poste', help: 'Inserir o Km/Poste mais próximo do elemento de monitoramento vistoriado, se aplicável. Padrão: "00/00" ou "000/000".', example: '51/02' },
   { key: 'nrLatGrauDecimalWgs84', label: 'Latitude em Graus (Datum: WGS84)', type: 'number', step: 'any', location: true, help: 'Definir Explicação', example: '-23.123456' },
-  { key: 'nrLongGrauDecimalWgs84', label: 'Longitude em Graus (Datum: WGS84)', type: 'number', step: 'any', location: true, help: 'Definir Explicação', example: '-46.123456' }
+  { key: 'nrLongGrauDecimalWgs84', label: 'Longitude em Graus (Datum: WGS84)', type: 'number', step: 'any', location: true, help: 'Definir Explicação', example: '-46.123456' },
+  { key: 'nrLatMetrosSirgas2000', label: 'Latitude em Metros (Datum: SIRGAS2000)', type: 'number', step: 'any', help: 'Inserir a latitude em metros no datum SIRGAS2000, se aplicável.', example: '7390000.00' },
+  { key: 'nrLongMetrosSirgas2000', label: 'Longitude em Metros (Datum: SIRGAS2000)', type: 'number', step: 'any', help: 'Inserir a longitude em metros no datum SIRGAS2000, se aplicável.', example: '330000.00' }
 ]
 
 const environmentalRegulationFields = [
@@ -490,7 +481,9 @@ const environmentalRegulationFields = [
   { key: 'txTipoDraListado', label: 'Tipo de DRA (Listado)', type: 'domain-select', domainKey: 'tiposDraListado', help: 'Selecionar o tipo de DRA relacionado ao elemento de monitoramento.', example: 'Outro(a)(s)' },
   { key: 'txTipoDraNListado', label: 'Tipo de DRA (Não Listado)', help: 'Inserir o tipo de DRA não listado quando "Tipo de DRA (Listado)" for "Outro(a)(s)".', example: 'Teste' },
   { key: 'txIdDra', label: 'Código Identificador do DRA', help: 'Inserir o código identificador do DRA.', example: 'DRF nº 123.456' },
-  { key: 'dtValidadeDra', label: 'Data de Validade do DRA', type: 'date', help: 'Inserir a data de validade do DRA. Padrão: dd/mm/aaaa.', example: '01/01/2001' }
+  { key: 'dtValidadeDra', label: 'Data de Validade do DRA', type: 'date', help: 'Inserir a data de validade do DRA. Padrão: dd/mm/aaaa.', example: '01/01/2001' },
+  { key: 'txAnaliseCptmAprovacao', label: 'Análise CPTM para Aprovação', type: 'textarea', help: 'Inserir a análise da CPTM para aprovação, quando aplicável.', example: 'Aprovado com ressalvas.', wide: true },
+  { key: 'txOfereceRiscoSistemaCptm', label: 'Oferece Risco ao Sistema CPTM', type: 'domain-select', domainKey: 'simNao', help: 'Indicar se o efluente oferece risco ao sistema CPTM.', example: 'Não' }
 ]
 
 const detailFields = [
@@ -505,7 +498,6 @@ const detailFields = [
   { key: 'txIdVeiculo', label: 'Identificador/Placa do Veículo', help: 'Inserir identificador/placa do veículo transportador do efluente.', example: 'WAD 105D' },
   { key: 'txIdGuiaRemessa', label: 'Código Identificador da Guia de Remessa', help: 'Inserir o código identificador da guia de remessa.', example: 'ID nº 10.456' },
   { key: 'nrDistanciaDaViaM', label: 'Distância da Via CPTM (Metros)', type: 'number', step: 'any', help: 'Inserir a distância da via mais próxima em relação ao efluente, utilizando número decimal em metros.', example: '7,58' },
-  { key: 'txOfereceRiscoSistemaCptm', label: 'Oferece Risco ao Sistema CPTM', type: 'domain-select', domainKey: 'simNao', help: 'Indicar se o efluente oferece risco ao sistema CPTM.', example: 'Não' },
   { key: 'txProprietario', label: 'Proprietário', type: 'domain-select', domainKey: 'proprietarios', help: 'Selecionar o proprietário relacionado ao efluente.', example: 'CPTM', wide: true },
   { key: 'txObsCadastramento', label: 'Obsevações Gerais: Cadastramento', type: 'textarea', help: 'Inserir observações relavantes, relativas ao cadastramento/caracterização, se necessário. Utilizar no máximo 255 caracteres.', wide: true }
 ]
@@ -525,7 +517,6 @@ const steps = [
 
 const activeStep = computed(() => steps[currentStep.value])
 const isLastStep = computed(() => currentStep.value === steps.length - 1)
-const isAdminUser = computed(() => getIsAdmin())
 const progressPercent = computed(() => Math.round(((currentStep.value + 1) / steps.length) * 100))
 const stepErrors = computed(() => steps.map((_, index) => getStepError(index)))
 const compactIndexes = computed(() => {
@@ -705,236 +696,37 @@ function initializeNewEfluenteDateTime() {
 async function applyLatestInspectionData() {
   if (isEditMode.value) return
 
-  if (!getCurrentMonitoredElementKeys().length) {
-    setStatus('Informe o elemento monitorado antes de preencher pela ultima inspecao.', 'warning')
-    return
-  }
-
   if (copyLastInspectionBusy.value) return
   copyLastInspectionBusy.value = true
-  setStatus('Buscando ultima inspecao do elemento...', 'info')
+  setStatus('Buscando dados da última inspeção...', 'info')
 
   try {
-    const latest = await findLatestInspectionForCurrentElement()
+    const latest = await getUltimaInspecaoEfluenteAPI()
+    const sourceData = mapApiEfluenteToFormData(latest)
 
-    if (!latest) {
-      setStatus('Nenhuma inspecao anterior encontrada para este elemento.', 'warning')
+    if (!Object.values(sourceData).some(Boolean)) {
+      setStatus('Nenhuma inspeção anterior encontrada.', 'warning')
       return
     }
 
-    const sourceData = await hydrateInspectionDataForCopy(latest)
     copyFixedFieldsFromLatestInspection(sourceData)
     updateMapFromInputs()
 
-    setStatus('Dados fixos copiados da ultima inspecao.', 'success')
+    setStatus('Dados da última inspeção copiados.', 'success')
   } catch (err) {
-    console.error('Erro ao copiar dados da ultima inspecao', err)
-    setStatus(err?.message || 'Nao foi possivel copiar os dados da ultima inspecao.', 'error')
+    console.error('Erro ao copiar dados da última inspeção', err)
+    setStatus(err?.message || 'Não foi possível copiar os dados da última inspeção.', 'error')
   } finally {
     copyLastInspectionBusy.value = false
   }
 }
 
-async function applyFirstInspectionData() {
-  if (isEditMode.value) return
-  if (copyFirstInspectionBusy.value) return
-
-  copyFirstInspectionBusy.value = true
-  setStatus('Buscando primeira inspecao...', 'info')
-
-  try {
-    const first = await findFirstInspectionForTemplate()
-    if (!first) {
-      setStatus('Nenhuma inspecao anterior encontrada para usar como modelo.', 'warning')
-      return
-    }
-
-    const sourceData = await hydrateInspectionDataForCopy(first)
-    copyFormFieldsFromFirstInspection(sourceData)
-    updateMapFromInputs()
-    setStatus('Dados da primeira inspecao copiados para o formulario.', 'success')
-  } catch (err) {
-    console.error('Erro ao copiar dados da primeira inspecao', err)
-    setStatus(err?.message || 'Nao foi possivel copiar os dados da primeira inspecao.', 'error')
-  } finally {
-    copyFirstInspectionBusy.value = false
-  }
-}
-
-async function findLatestInspectionForCurrentElement() {
-  const targetKeys = getCurrentMonitoredElementKeys()
-  if (!targetKeys.length) return null
-
-  const candidates = await getInspectionCopyCandidates()
-  const sameElementCandidates = candidates.filter(item => isSameMonitoredElement(item, targetKeys))
-
-  if (!sameElementCandidates.length) return null
-
-  return sameElementCandidates
-    .sort((a, b) => getInspectionRecencyTime(b) - getInspectionRecencyTime(a))
-  [0]
-}
-
-async function findFirstInspectionForTemplate() {
-  const candidates = await getInspectionCopyCandidates()
-  if (!candidates.length) return null
-
-  return candidates
-    .sort((a, b) => getInspectionTemplateTime(a) - getInspectionTemplateTime(b))
-  [0]
-}
-
-async function getInspectionCopyCandidates() {
-  const candidates = []
-
-  try {
-    const localRecords = await getAllInspections()
-    candidates.push(
-      ...(localRecords || [])
-        .map(normalizeLocalEfluenteRecord)
-        .filter(Boolean)
-        .filter(item => !isCurrentInspectionRecord(item))
-    )
-  } catch (err) {
-    console.error('Erro ao buscar inspecoes locais para copia', err)
-  }
-
-  try {
-    candidates.push(
-      ...(await getApiInspectionsForCopy())
-        .filter(Boolean)
-        .filter(item => !isCurrentInspectionRecord(item))
-    )
-  } catch (err) {
-    console.error('Erro ao buscar inspecoes da API para copia', err)
-  }
-
-  return candidates
-}
-
-async function getApiInspectionsForCopy() {
-  const listFns = isAdminUser.value
-    ? [getAdminEfluentesAPI, getMeusEfluentesAPI]
-    : [getMeusEfluentesAPI]
-
-  let lastError = null
-
-  for (const listFn of listFns) {
-    try {
-      const response = await listFn({ pageSize: 100 })
-      return extractEfluenteItems(response).map(normalizeApiEfluenteListItem)
-    } catch (err) {
-      lastError = err
-    }
-  }
-
-  throw lastError || new Error('Nao foi possivel buscar inspecoes da API.')
-}
-
-async function hydrateInspectionDataForCopy(item) {
-  const pk = getInspectionPk(item)
-  const isLocalDraft = item?.syncStatus && item.syncStatus !== SYNC_STATUS.SENT
-
-  if (pk && !isLocalDraft) {
-    try {
-      return mapApiEfluenteToFormData(await getEfluenteByPkAPI(pk))
-    } catch (err) {
-      console.error('Erro ao detalhar ultima inspecao para copia', err)
-    }
-  }
-
-  return mapApiEfluenteToFormData(item?.formData || item || {})
-}
-
 function copyFixedFieldsFromLatestInspection(sourceData = {}) {
-  for (const key of FIXED_FIELDS_FROM_LAST_INSPECTION) {
-    form[key] = sourceData[key] ?? ''
-  }
-  coerceDomainFieldValuesToDescription()
-}
-
-function copyFormFieldsFromFirstInspection(sourceData = {}) {
   for (const key of EFLUENTE_FIELD_KEYS) {
-    if (key === 'pkCdMeioAmbienteCptm') continue
-    if (key === 'dtDataDoCadastramento') continue
-    if (key === 'hrHoraDoCadastramento') continue
+    if (FIELDS_NOT_COPIED_FROM_LAST_INSPECTION.has(key)) continue
     form[key] = sourceData[key] ?? ''
   }
-  form.pkCdMeioAmbienteCptm = ''
   coerceDomainFieldValuesToDescription()
-}
-
-function getCurrentMonitoredElementKeys() {
-  return getMonitoredElementKeys(form)
-}
-
-function getMonitoredElementKeys(source = {}) {
-  return [
-    normalizeElementReference(source?.txNrElementoMonitoramento),
-    normalizeElementReference(source?.txNmElementoMonitoramento)
-  ].filter(Boolean)
-}
-
-function normalizeElementReference(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-}
-
-function isSameMonitoredElement(item, targetKeys = []) {
-  const source = item?.formData || item || {}
-  const itemKeys = getMonitoredElementKeys(source)
-  return itemKeys.some(key => targetKeys.includes(key))
-}
-
-function isCurrentInspectionRecord(item) {
-  const currentIds = [
-    localDraftId.value,
-    route.params.id
-  ].map(value => String(value || '')).filter(value => value && value !== 'new')
-
-  if (!currentIds.length) return false
-
-  const itemIds = [
-    item?.localId,
-    item?.id,
-    item?.serverId,
-    item?.pkCdMeioAmbienteCptm,
-    item?.formData?.pkCdMeioAmbienteCptm
-  ].map(value => String(value || '')).filter(Boolean)
-
-  return itemIds.some(id => currentIds.includes(id))
-}
-
-function getInspectionPk(item = {}) {
-  return item.pkCdMeioAmbienteCptm
-    || item.PkCdMeioAmbienteCptm
-    || item.serverId
-    || item.formData?.pkCdMeioAmbienteCptm
-    || ''
-}
-
-function getInspectionRecencyTime(item = {}) {
-  const source = item.formData || item
-  const date = source.dtDataDoCadastramento || source.dtDataEmissaoFormulario
-  const time = source.hrHoraDoCadastramento || '00:00'
-  const dateTime = date ? new Date(`${String(date).slice(0, 10)}T${time}`) : null
-  if (dateTime && !Number.isNaN(dateTime.getTime())) return dateTime.getTime()
-
-  for (const fallback of [item.updatedAt, item.createdAt, item.UpdatedAt, item.CreatedAt]) {
-    const parsed = new Date(fallback)
-    if (!Number.isNaN(parsed.getTime())) return parsed.getTime()
-  }
-
-  return 0
-}
-
-function getInspectionTemplateTime(item = {}) {
-  const time = getInspectionRecencyTime(item)
-  return time || Number.MAX_SAFE_INTEGER
 }
 
 async function loadEfluente() {
@@ -1791,6 +1583,10 @@ function returnToMain() {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+}
+
+.attachments-layout>.wizard-grid {
+  grid-column: 1 / -1;
 }
 
 .photo-help-inline {
