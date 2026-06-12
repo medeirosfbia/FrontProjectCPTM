@@ -301,6 +301,10 @@ function toSnakeKey(key) {
   return String(key).replace(/([A-Z])/g, '_$1').toLowerCase()
 }
 
+const API_FIELD_ALIASES = {
+  txProprietario: ['proprietario', 'Proprietario', 'PROPRIETARIO']
+}
+
 function readApiValue(source = {}, key) {
   const pascalKey = key.charAt(0).toUpperCase() + key.slice(1)
   const snakeKey = toSnakeKey(key)
@@ -308,7 +312,8 @@ function readApiValue(source = {}, key) {
     key,
     pascalKey,
     snakeKey,
-    snakeKey.toUpperCase()
+    snakeKey.toUpperCase(),
+    ...(API_FIELD_ALIASES[key] || [])
   ]
 
   for (const candidate of candidates) {

@@ -30,6 +30,11 @@ const EFLUENTE_DOMINIOS_ENDPOINTS = {
   tiposVeiculo: 'tipos-veiculo'
 }
 
+const SIM_NAO_DOMINIO_FALLBACK = [
+  { codigo: 1, descricao: 'Sim' },
+  { codigo: 2, descricao: 'Não' }
+]
+
 function normalizeDominioItems(items) {
   return Array.isArray(items)
     ? items
@@ -231,7 +236,20 @@ export async function getDominioAPI(endpoint) {
   const normalizedEndpoint = String(endpoint || '').replace(/^\/?(api\/)?dominios\/?/, '').replace(/^\/+/, '')
   if (!normalizedEndpoint) throw new Error('Endpoint de dominio obrigatorio.')
 
-  return normalizeDominioItems(await apiFetch(`/dominios/${normalizedEndpoint}`, { method: 'GET' }))
+  try {
+    const items = normalizeDominioItems(await apiFetch(`/dominios/${normalizedEndpoint}`, { method: 'GET' }))
+    if (normalizedEndpoint === EFLUENTE_DOMINIOS_ENDPOINTS.simNao && !items.length) {
+      return SIM_NAO_DOMINIO_FALLBACK
+    }
+
+    return items
+  } catch (err) {
+    if (normalizedEndpoint === EFLUENTE_DOMINIOS_ENDPOINTS.simNao) {
+      return SIM_NAO_DOMINIO_FALLBACK
+    }
+
+    throw err
+  }
 }
 
 export async function getDominiosFormularioEfluenteAPI() {
