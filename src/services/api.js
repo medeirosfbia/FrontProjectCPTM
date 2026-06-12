@@ -4,6 +4,65 @@ export const API_ORIGIN = 'http://localhost:5000'
 const BASE = `${API_ORIGIN}/api`
 const EFLUENTES_BASE = `${BASE}/efluentes`
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000
+export const EFLUENTE_DOMINIOS_CACHE_KEY = 'efluente_dominios_cache'
+
+const EFLUENTE_DOMINIOS_ENDPOINTS = {
+  siglasDepartamentoMeioAmbiente: 'siglas-departamento-meio-ambiente',
+  areasGestoras: 'areas-gestoras',
+  naturezasPga: 'naturezas-pga',
+  statusDesvio: 'status-desvio',
+  statusRegistroBd: 'status-registro-bd',
+  municipios: 'municipios',
+  linhas: 'linhas',
+  vias: 'vias',
+  trechosSentidos: 'trechos-sentidos',
+  estacoes: 'estacoes',
+  tiposProprietario: 'tipos-proprietario',
+  proprietarios: 'proprietarios',
+  simNao: 'sim-nao',
+  tiposAtividadeListada: 'tipos-atividade-listada',
+  tiposDraListado: 'tipos-dra-listado',
+  tiposAtividadeCptm: 'tipos-atividade-cptm',
+  locaisAtividade: 'locais-atividade',
+  origensEfluente: 'origens-efluente',
+  fontesGeradoras: 'fontes-geradoras',
+  tiposDestinacao: 'tipos-destinacao',
+  tiposVeiculo: 'tipos-veiculo'
+}
+
+function normalizeDominioItems(items) {
+  return Array.isArray(items)
+    ? items
+      .map((item) => ({
+        codigo: item?.codigo ?? item?.Codigo ?? item?.id ?? item?.Id ?? '',
+        descricao: item?.descricao ?? item?.Descricao ?? item?.description ?? ''
+      }))
+      .filter((item) => item.descricao !== '')
+    : []
+}
+
+function readDominiosCache() {
+  if (typeof localStorage === 'undefined') return null
+
+  try {
+    const raw = localStorage.getItem(EFLUENTE_DOMINIOS_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeDominiosCache(dominios) {
+  if (typeof localStorage === 'undefined') return
+
+  try {
+    localStorage.setItem(EFLUENTE_DOMINIOS_CACHE_KEY, JSON.stringify(dominios))
+  } catch {
+    // Cache is best-effort; the form can still use the response in memory.
+  }
+}
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
   if (typeof AbortController === 'undefined' || options.signal) {
@@ -166,6 +225,55 @@ export async function apiFetch(path, options = {}) {
   }
 
   return data
+}
+
+export async function getDominioAPI(endpoint) {
+  const normalizedEndpoint = String(endpoint || '').replace(/^\/?(api\/)?dominios\/?/, '').replace(/^\/+/, '')
+  if (!normalizedEndpoint) throw new Error('Endpoint de dominio obrigatorio.')
+
+  return normalizeDominioItems(await apiFetch(`/dominios/${normalizedEndpoint}`, { method: 'GET' }))
+}
+
+export async function getDominiosFormularioEfluenteAPI() {
+  const cached = readDominiosCache() || {}
+  const entries = Object.entries(EFLUENTE_DOMINIOS_ENDPOINTS)
+  const results = await Promise.allSettled(
+    entries.map(async ([key, endpoint]) => ({
+      key,
+      items: await getDominioAPI(endpoint)
+    }))
+  )
+
+  const dominios = {}
+  let successCount = 0
+  let fallbackCount = 0
+  let firstError = null
+
+  results.forEach((result, index) => {
+    const key = entries[index][0]
+
+    if (result.status === 'fulfilled') {
+      dominios[key] = result.value.items
+      successCount += 1
+      return
+    }
+
+    firstError ||= result.reason
+    dominios[key] = Array.isArray(cached[key]) ? cached[key] : []
+    if (dominios[key].length) fallbackCount += 1
+  })
+
+  if (successCount > 0) {
+    writeDominiosCache({ ...cached, ...dominios })
+    return dominios
+  }
+
+  if (fallbackCount > 0) return dominios
+
+  const message = 'Não foi possível carregar as listas suspensas.'
+  const cacheError = new Error(message)
+  cacheError.cause = firstError
+  throw cacheError
 }
 
 export async function login(email, password) {
@@ -554,6 +662,8 @@ export default {
   getToken,
   getIsAdmin,
   getCurrentUserId,
+  getDominioAPI,
+  getDominiosFormularioEfluenteAPI,
   getUsuariosAPI,
   getUserByIdAPI,
   updateUsuarioAPI,

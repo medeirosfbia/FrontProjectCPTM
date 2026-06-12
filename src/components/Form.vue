@@ -34,7 +34,19 @@
           </div>
 
           <div v-if="activeStep.kind === 'fields'" class="wizard-grid">
-            <label v-for="field in activeStep.fields" :key="field.key" class="field" :class="{ wide: field.wide }">
+            <template v-for="field in activeStep.fields" :key="field.key">
+              <DomainSelect
+                v-if="field.type === 'domain-select'"
+                v-model="form[field.key]"
+                :class="{ wide: field.wide }"
+                :label="field.label"
+                :options="getDomainOptions(field.domainKey)"
+                :loading="dominiosLoading"
+                :disabled="field.readonly"
+                :help="field.help"
+                :example="field.example"
+              />
+              <label v-else class="field" :class="{ wide: field.wide }">
               <div class="field-label-row">
                 <span>{{ field.label }}</span>
                 <FieldHelp :text="field.help" :example="field.example" />
@@ -51,12 +63,25 @@
                 :max="field.max" :inputmode="field.inputmode" :placeholder="field.placeholder || ''"
                 :readonly="field.readonly" :disabled="field.readonly"
                 @change="field.location ? updateMapFromInputs() : null" />
-            </label>
+              </label>
+            </template>
           </div>
 
           <div v-if="activeStep.kind === 'location'" class="location-layout">
             <div class="wizard-grid">
-              <label v-for="field in activeStep.fields" :key="field.key" class="field" :class="{ wide: field.wide }">
+              <template v-for="field in activeStep.fields" :key="field.key">
+                <DomainSelect
+                  v-if="field.type === 'domain-select'"
+                  v-model="form[field.key]"
+                  :class="{ wide: field.wide }"
+                  :label="field.label"
+                  :options="getDomainOptions(field.domainKey)"
+                  :loading="dominiosLoading"
+                  :disabled="field.readonly"
+                  :help="field.help"
+                  :example="field.example"
+                />
+                <label v-else class="field" :class="{ wide: field.wide }">
                 <div class="field-label-row">
                   <span>{{ field.label }}</span>
                   <FieldHelp :text="field.help" :example="field.example" />
@@ -71,7 +96,8 @@
                   :max="field.max" :inputmode="field.inputmode" :placeholder="field.placeholder || ''"
                   :readonly="field.readonly" :disabled="field.readonly"
                   @change="field.location ? updateMapFromInputs() : null" />
-              </label>
+                </label>
+              </template>
             </div>
             <div class="map-card">
               <div id="efluente-map"></div>
@@ -251,6 +277,7 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import logo from '../assets/cptm_logo_simples.png'
 import AppLayout from './ui/AppLayout.vue'
+import DomainSelect from './ui/DomainSelect.vue'
 import EmptyState from './ui/EmptyState.vue'
 import FieldHelp from './ui/FieldHelp.vue'
 import Header from './ui/Header.vue'
@@ -265,6 +292,7 @@ import {
   createEfluenteMultipartAPI,
   extractEfluenteItems,
   getAdminEfluentesAPI,
+  getDominiosFormularioEfluenteAPI,
   getEfluenteAnexoBlobAPI,
   getEfluenteAnexosAPI,
   getEfluenteByPkAPI,
@@ -354,39 +382,62 @@ const FIXED_FIELDS_FROM_LAST_INSPECTION = [
 const emptyForm = createEmptyEfluenteFormData()
 const form = reactive(createEmptyEfluenteFormData())
 
-import { EFLUENTE_DOMAINS } from '../data/efluenteDomains'
+const dominios = reactive({
+  siglasDepartamentoMeioAmbiente: [],
+  areasGestoras: [],
+  naturezasPga: [],
+  statusDesvio: [],
+  statusRegistroBd: [],
+  municipios: [],
+  linhas: [],
+  vias: [],
+  trechosSentidos: [],
+  estacoes: [],
+  tiposProprietario: [],
+  proprietarios: [],
+  simNao: [],
+  tiposAtividadeListada: [],
+  tiposDraListado: [],
+  tiposAtividadeCptm: [],
+  locaisAtividade: [],
+  origensEfluente: [],
+  fontesGeradoras: [],
+  tiposDestinacao: [],
+  tiposVeiculo: []
+})
+const dominiosLoading = ref(true)
+const dominiosLoadError = ref('')
 
-// Dados de Domínio Integrados (Hardcoded para funcionamento Offline PWA)
-const tipoProprietarioOptions = ref(EFLUENTE_DOMAINS.tipoProprietario)
-const tipoProprietarioL13Options = ref(EFLUENTE_DOMAINS.tipoProprietarioL13)
-const simNaoOptions = ref(EFLUENTE_DOMAINS.simNao)
-const statusRegistroOptions = ref(EFLUENTE_DOMAINS.statusRegistro)
-const statusDesvioOptions = ref(EFLUENTE_DOMAINS.statusDesvio)
-const naturezaOptions = ref(EFLUENTE_DOMAINS.natureza)
-const tipoAtividadeListadaOptions = ref(EFLUENTE_DOMAINS.tipoAtividadeListada)
-const tipoDraListadoOptions = ref(EFLUENTE_DOMAINS.tipoDraListado)
-const atividadeCptmOptions = ref(EFLUENTE_DOMAINS.atividadeCptm)
-const edificacaoOptions = ref(EFLUENTE_DOMAINS.edificacao)
-const origemOptions = ref(EFLUENTE_DOMAINS.origem)
-const fonteGeradoraOptions = ref(EFLUENTE_DOMAINS.fonteGeradora)
-const destinacaoOptions = ref(EFLUENTE_DOMAINS.destinacao)
-const veiculoOptions = ref(EFLUENTE_DOMAINS.veiculo)
-const siglaMeioAmbienteOptions = ref(EFLUENTE_DOMAINS.siglaMeioAmbiente)
-const areaGestoraOptions = ref(EFLUENTE_DOMAINS.areaGestora)
-const municipioOptions = ref(EFLUENTE_DOMAINS.municipio)
-const linhaOptions = ref(EFLUENTE_DOMAINS.linha)
-const viaOptions = ref(EFLUENTE_DOMAINS.via)
-const estacaoOptions = ref(EFLUENTE_DOMAINS.estacao)
-const trechoOptions = ref(EFLUENTE_DOMAINS.trecho)
-const proprietarioOptions = ref(EFLUENTE_DOMAINS.proprietario)
+const domainFieldKeys = {
+  txSiglaDeptoMeioAmbiente: 'siglasDepartamentoMeioAmbiente',
+  txStatusDoDesvioAmbiental: 'statusDesvio',
+  txStatusDoRegistroNoBd: 'statusRegistroBd',
+  txMunicipio: 'municipios',
+  txLinhaCptm: 'linhas',
+  txViaCptm: 'vias',
+  txTrechoESentidoCptm: 'trechosSentidos',
+  txEstacaoCptm: 'estacoes',
+  txNaturezaDoPga: 'naturezasPga',
+  txTipoAtividadeListada: 'tiposAtividadeListada',
+  txTipoDraListado: 'tiposDraListado',
+  txTipoAtividadeCptm: 'tiposAtividadeCptm',
+  txNmLocalAtiv: 'locaisAtividade',
+  txOrigemEfluente: 'origensEfluente',
+  txFonteGeradora: 'fontesGeradoras',
+  txTipoDestinacao: 'tiposDestinacao',
+  txTipoVeiculo: 'tiposVeiculo',
+  txOfereceRiscoSistemaCptm: 'simNao',
+  txProprietario: 'proprietarios',
+  txNmAreaGestoraCptm: 'areasGestoras'
+}
 
 const institutionalFields = [
   { key: 'txNomePjDaContratada', label: 'Nome (Pesso Jurídica) da Contratada', help: 'Inserir o nome e sigla da Contratada. Separar nome e sigla por " - ". A sigla pode conter até 10 caracteres, maiúsculos e sem espaços.', example: 'Companhia Paulista de Trens Metropolitanos S.A. - CPTM', wide: true },
   { key: 'txNrContratoContratada', label: 'Nº do Contrato (da Contratada)', help: 'Inserir o identificador do contrato da Contratada, se aplicável. Padrão: Número/Código com até 12 caracteres e sem espaços.', example: 'AR01234-56' },
   { key: 'txNmLocalEscopoContratual', label: 'Local do Escopo Contratual (Pseudônimo)', help: 'Indicar um nome genérico para o local do escopo contratual ou área/trecho da CPTM.', example: 'Pátio Capuava' },
   { key: 'txNomePfDaRepresentante', label: 'Representante (PF) da Contratada e/ou Área Gestora da CPTM', help: 'Inserir o nome do responsável interlocutor da Contratada e/ou da Área Gestora da CPTM para assuntos de meio ambiente, utilizando no máximo 89 caracteres.', example: 'Pessoa 1 / Pessoa 2', wide: true },
-  { key: 'txSiglaDeptoMeioAmbiente', label: 'Sigla da Área de Meio Ambiente', type: 'select', options: siglaMeioAmbienteOptions, help: 'Escolher a sigla do departamento interlocutor da Gerência de Meio Ambiente - GEA.', example: 'GEA.DEAE' },
-  { key: 'txNmAreaGestoraCptm', label: 'Nome da Área Gestora CPTM', type: 'select', options: areaGestoraOptions, help: 'Escolher área gestora da CPTM, se aplicável.', example: 'DEPTO. DE MANUT. DE SISTEMAS ELETR. E RESTAB. DE SERVICOS', wide: true },
+  { key: 'txSiglaDeptoMeioAmbiente', label: 'Sigla da Área de Meio Ambiente', type: 'domain-select', domainKey: 'siglasDepartamentoMeioAmbiente', help: 'Escolher a sigla do departamento interlocutor da Gerência de Meio Ambiente - GEA.', example: 'GEA.DEAE' },
+  { key: 'txNmAreaGestoraCptm', label: 'Nome da Área Gestora CPTM', type: 'domain-select', domainKey: 'areasGestoras', help: 'Escolher área gestora da CPTM, se aplicável.', example: 'DEPTO. DE MANUT. DE SISTEMAS ELETR. E RESTAB. DE SERVICOS', wide: true },
   { key: 'txIdAreaGestoraCptm', label: 'Indentificador da Área Gestora CPTM', help: 'Campo Automático', example: 'ID.10-15-5-3-0000', readonly: true },
   { key: 'txSiglaAreaGestoraCptm', label: 'Sigla da Área Gestora CPTM', help: 'Campo Automático', example: 'DO.GOT.DOTV.1000', readonly: true },
   { key: 'txNomePjDaSupervisora', label: 'Nome (PJ) da Supervisora Ambiental', help: 'Inserir o nome e sigla da Supervisora Ambiental, utilizando no máximo 89 caracteres. Quando a Supervisora for a própria CPTM repetir a gerência e departamento ambiental informados anteriormente.', example: 'Empresa de Supervisão Ambiental Ltda. - ESA', wide: true }
@@ -400,7 +451,7 @@ const cadastrerFields = [
 ]
 
 const formIdentificationFields = [
-  { key: 'txNaturezaDoPga', label: 'Natureza (do PGA)', type: 'select', options: naturezaOptions, help: 'Escolher a Natureza correspondente. Utilizar menu suspenso.', example: 'Emissões Atmosféricas' },
+  { key: 'txNaturezaDoPga', label: 'Natureza (do PGA)', type: 'domain-select', domainKey: 'naturezasPga', help: 'Escolher a Natureza correspondente. Utilizar menu suspenso.', example: 'Emissões Atmosféricas' },
   { key: 'txTipoDeFormulario', label: 'Tipo de Formulário', help: 'Campo Automático', example: 'Formulário de Cadastramento - FDC (FDC-EEA.EF)', readonly: true },
   { key: 'dtDataEmissaoFormulario', label: 'Data de Emissão do Formulário', type: 'date', help: 'Inserir a data de emissão do documento. Padrão: dd/mm/aaaa.', example: '01/01/2001' },
   { key: 'nrNumeroDeFormulario', label: 'Número do Formulário', type: 'number', min: 1, max: 999999, inputmode: 'numeric', help: 'Inserir o número de identificação do formulário. Escolher de 1 a 999.999. Digitar apenas números. O número deve ser sequencial, não replicável e com seis unidades. Exibição final: Nº 000001.', example: '1' },
@@ -418,42 +469,44 @@ const monitoredElementFields = [
   { key: 'pkCdMeioAmbienteCptm', label: 'Chave Primária - Meio Ambiente', help: 'Campo Automático', example: 'EEA.EF-A.2026-L.07-CPTM-N.000001', readonly: true, wide: true },
   { key: 'txNrElementoMonitoramento', label: 'Elemento de Monitoramento - Número', min: 1, max: 999999, inputmode: 'numeric', help: 'Inserir o número do elemento monitorado. Escolher de 1 a 999.999. Digitar apenas números. O número deve ser sequencial, não replicável e com seis unidades. Exibição final: N.000001.', example: '1' },
   { key: 'txNmElementoMonitoramento', label: 'Elemento de Monitoramento - Nome', help: 'Indicar um nome genérico para o elemento de monitoramento.', example: 'Plataforma 1' },
-  { key: 'txStatusDoRegistroNoBd', label: 'Status do Registro no BD', type: 'select', options: statusRegistroOptions, help: 'Indica se o registro está ativo ou inativo no banco de dados.', example: 'Ativo', readonly: !getIsAdmin() },
-  { key: 'txStatusDoDesvioAmbiental', label: 'Status do Desvio Ambiental', type: 'select', options: statusDesvioOptions, help: 'Indica a situação de regularidade ambiental do desvio.', example: 'Regularizado', readonly: !getIsAdmin() }
+  { key: 'txStatusDoRegistroNoBd', label: 'Status do Registro no BD', type: 'domain-select', domainKey: 'statusRegistroBd', help: 'Indica se o registro está ativo ou inativo no banco de dados.', example: 'Ativo', readonly: !getIsAdmin() },
+  { key: 'txStatusDoDesvioAmbiental', label: 'Status do Desvio Ambiental', type: 'domain-select', domainKey: 'statusDesvio', help: 'Indica a situação de regularidade ambiental do desvio.', example: 'Regularizado', readonly: !getIsAdmin() }
 ]
 
 const locationFields = [
-  { key: 'txMunicipio', label: 'Nome de Município', type: 'select', options: municipioOptions, help: 'Selecionar o município no qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Campo Limpo Paulista' },
-  { key: 'txLinhaCptm', label: 'Nome da Linha CPTM', type: 'select', options: linhaOptions, help: 'Escolher o número da Linha. Utilizar menu suspenso.', example: 'Linha 07 - Rubi' },
-  { key: 'txEstacaoCptm', label: 'Nome da Estação CPTM', type: 'select', options: estacaoOptions, help: 'Selecionar o nome da estação na qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Estação Jardim Helena - Vila Mara' },
-  { key: 'txViaCptm', label: 'Número da Via da Linha CPTM', type: 'select', options: viaOptions, help: 'Selecionar a via na qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Via 03E - Trecho 2' },
-  { key: 'txTrechoESentidoCptm', label: 'Trecho e Sentido da Linha CPTM', type: 'select', options: trechoOptions, help: 'Selecionar o trecho e sentido da via na qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Estação Antônio Gianetti Neto - Estação Ferraz de Vasconcelos', wide: true },
+  { key: 'txMunicipio', label: 'Nome de Município', type: 'domain-select', domainKey: 'municipios', help: 'Selecionar o município no qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Campo Limpo Paulista' },
+  { key: 'txLinhaCptm', label: 'Nome da Linha CPTM', type: 'domain-select', domainKey: 'linhas', help: 'Escolher o número da Linha. Utilizar menu suspenso.', example: 'Linha 07 - Rubi' },
+  { key: 'txEstacaoCptm', label: 'Nome da Estação CPTM', type: 'domain-select', domainKey: 'estacoes', help: 'Selecionar o nome da estação na qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Estação Jardim Helena - Vila Mara' },
+  { key: 'txViaCptm', label: 'Número da Via da Linha CPTM', type: 'domain-select', domainKey: 'vias', help: 'Selecionar a via na qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Via 03E - Trecho 2' },
+  { key: 'txTrechoESentidoCptm', label: 'Trecho e Sentido da Linha CPTM', type: 'domain-select', domainKey: 'trechosSentidos', help: 'Selecionar o trecho e sentido da via na qual está localizado o elemento monitorado no ato da vistoria, se aplicável. Utilizar menu suspenso.', example: 'Estação Antônio Gianetti Neto - Estação Ferraz de Vasconcelos', wide: true },
   { key: 'txKmPoste', label: 'Número do Quilômetro e Poste', help: 'Inserir o Km/Poste mais próximo do elemento de monitoramento vistoriado, se aplicável. Padrão: "00/00" ou "000/000".', example: '51/02' },
   { key: 'nrLatGrauDecimalWgs84', label: 'Latitude em Graus (Datum: WGS84)', type: 'number', step: 'any', location: true, help: 'Definir Explicação', example: '-23.123456' },
   { key: 'nrLongGrauDecimalWgs84', label: 'Longitude em Graus (Datum: WGS84)', type: 'number', step: 'any', location: true, help: 'Definir Explicação', example: '-46.123456' }
 ]
 
 const environmentalRegulationFields = [
-  { key: 'txTipoAtividadeListada', label: 'Tipo de Atividade (Listada)', type: 'select', options: tipoAtividadeListadaOptions, help: 'Selecionar o tipo de atividade relacionada ao elemento de monitoramento.', example: 'Outro(a)(s)' },
+  { key: 'txTipoAtividadeListada', label: 'Tipo de Atividade (Listada)', type: 'domain-select', domainKey: 'tiposAtividadeListada', help: 'Selecionar o tipo de atividade relacionada ao elemento de monitoramento.', example: 'Outro(a)(s)' },
   { key: 'txTipoAtividadeNListada', label: 'Tipo de Atividade (Não Listada)', help: 'Inserir o tipo de atividade não listada quando "Tipo de Atividade (Listada)" for "Outro(a)(s)".', example: 'Transporte' },
-  { key: 'txTipoDraListado', label: 'Tipo de DRA (Listado)', type: 'select', options: tipoDraListadoOptions, help: 'Selecionar o tipo de DRA relacionado ao elemento de monitoramento.', example: 'Outro(a)(s)' },
+  { key: 'txTipoDraListado', label: 'Tipo de DRA (Listado)', type: 'domain-select', domainKey: 'tiposDraListado', help: 'Selecionar o tipo de DRA relacionado ao elemento de monitoramento.', example: 'Outro(a)(s)' },
   { key: 'txTipoDraNListado', label: 'Tipo de DRA (Não Listado)', help: 'Inserir o tipo de DRA não listado quando "Tipo de DRA (Listado)" for "Outro(a)(s)".', example: 'Teste' },
   { key: 'txIdDra', label: 'Código Identificador do DRA', help: 'Inserir o código identificador do DRA.', example: 'DRF nº 123.456' },
   { key: 'dtValidadeDra', label: 'Data de Validade do DRA', type: 'date', help: 'Inserir a data de validade do DRA. Padrão: dd/mm/aaaa.', example: '01/01/2001' }
 ]
 
 const detailFields = [
-  { key: 'txTipoAtividadeCptm', label: 'Tipo de Atividade na CPTM', type: 'select', options: atividadeCptmOptions, help: 'Selecionar o tipo de atividade na CPTM. Utilizar lista suspensa.', example: 'Empreendimento/Obra' },
-  { key: 'txNmLocalAtiv', label: 'Nome Edificação/Local da CPTM', type: 'select', options: edificacaoOptions, help: 'Selecionar o nome da edificação/local da CPTM. Utilizar lista suspensa.', example: 'Estação' },
+  { key: 'txTipoAtividadeCptm', label: 'Tipo de Atividade na CPTM', type: 'domain-select', domainKey: 'tiposAtividadeCptm', help: 'Selecionar o tipo de atividade na CPTM. Utilizar lista suspensa.', example: 'Empreendimento/Obra' },
+  { key: 'txNmLocalAtiv', label: 'Nome Edificação/Local da CPTM', type: 'domain-select', domainKey: 'locaisAtividade', help: 'Selecionar o nome da edificação/local da CPTM. Utilizar lista suspensa.', example: 'Estação' },
   { key: 'txNmLocalAtivComplemento', label: 'Nome Edificação/Local (Complemento)', help: 'Inserir o complemento do nome da edificação/local na CPTM.', example: 'Brás' },
-  { key: 'txOrigemEfluente', label: 'Origem do Efluente', type: 'select', options: origemOptions, help: 'Selecionar a origem do efluente. Utilizar lista suspensa.', example: 'Industrial' },
-  { key: 'txFonteGeradora', label: 'Fonte Geradora do Efluente', type: 'select', options: fonteGeradoraOptions, help: 'Selecionar a fonte geradora do efluente. Utilizar lista suspensa.', example: 'Banheiro químico' },
+  { key: 'txOrigemEfluente', label: 'Origem do Efluente', type: 'domain-select', domainKey: 'origensEfluente', help: 'Selecionar a origem do efluente. Utilizar lista suspensa.', example: 'Industrial' },
+  { key: 'txFonteGeradora', label: 'Fonte Geradora do Efluente', type: 'domain-select', domainKey: 'fontesGeradoras', help: 'Selecionar a fonte geradora do efluente. Utilizar lista suspensa.', example: 'Banheiro químico' },
   { key: 'nrQuantidadeL', label: 'Quantidade (Litros)', type: 'number', step: 'any', help: 'Inserir a quantidade em litros de efluente. Padrão: número com até 8 casas decimais.', example: '9,25' },
-  { key: 'txTipoDestinacao', label: 'Tipo de Destinação do Efluente', type: 'select', options: destinacaoOptions, help: 'Selecionar o tipo de destinação do efluente. Utilizar lista suspensa.', example: 'Interligação em rede coletora' },
-  { key: 'txTipoVeiculo', label: 'Tipo de Veículo', type: 'select', options: veiculoOptions, help: 'Selecionar o tipo de veículo transportador do efluente. Utilizar lista suspensa.', example: 'Caminhão' },
+  { key: 'txTipoDestinacao', label: 'Tipo de Destinação do Efluente', type: 'domain-select', domainKey: 'tiposDestinacao', help: 'Selecionar o tipo de destinação do efluente. Utilizar lista suspensa.', example: 'Interligação em rede coletora' },
+  { key: 'txTipoVeiculo', label: 'Tipo de Veículo', type: 'domain-select', domainKey: 'tiposVeiculo', help: 'Selecionar o tipo de veículo transportador do efluente. Utilizar lista suspensa.', example: 'Caminhão' },
   { key: 'txIdVeiculo', label: 'Identificador/Placa do Veículo', help: 'Inserir identificador/placa do veículo transportador do efluente.', example: 'WAD 105D' },
   { key: 'txIdGuiaRemessa', label: 'Código Identificador da Guia de Remessa', help: 'Inserir o código identificador da guia de remessa.', example: 'ID nº 10.456' },
   { key: 'nrDistanciaDaViaM', label: 'Distância da Via CPTM (Metros)', type: 'number', step: 'any', help: 'Inserir a distância da via mais próxima em relação ao efluente, utilizando número decimal em metros.', example: '7,58' },
+  { key: 'txOfereceRiscoSistemaCptm', label: 'Oferece Risco ao Sistema CPTM', type: 'domain-select', domainKey: 'simNao', help: 'Indicar se o efluente oferece risco ao sistema CPTM.', example: 'Não' },
+  { key: 'txProprietario', label: 'Proprietário', type: 'domain-select', domainKey: 'proprietarios', help: 'Selecionar o proprietário relacionado ao efluente.', example: 'CPTM', wide: true },
   { key: 'txObsCadastramento', label: 'Obsevações Gerais: Cadastramento', type: 'textarea', help: 'Inserir observações relavantes, relativas ao cadastramento/caracterização, se necessário. Utilizar no máximo 255 caracteres.', wide: true }
 ]
 
@@ -503,7 +556,7 @@ const reviewGroups = computed(() => [
 
 // Automação de campos derivada do domínio de Área Gestora
 watch(() => form.txNmAreaGestoraCptm, (newVal) => {
-  const option = areaGestoraOptions.value.find(o => o.codigo === newVal)
+  const option = findDomainOption('areasGestoras', newVal)
   if (option) {
     const desc = option.descricao || ''
     const siglaMatch = desc.match(/\(([^)]+)\)/)
@@ -513,6 +566,28 @@ watch(() => form.txNmAreaGestoraCptm, (newVal) => {
     form.txIdAreaGestoraCptm = idMatch ? idMatch[1] : ''
   }
 })
+
+function getDomainOptions(domainKey) {
+  return Array.isArray(dominios[domainKey]) ? dominios[domainKey] : []
+}
+
+function findDomainOption(domainKey, value) {
+  if (value === '' || value === null || value === undefined) return null
+
+  const normalizedValue = String(value)
+  return getDomainOptions(domainKey).find((option) => (
+    String(option.codigo) === normalizedValue || String(option.descricao) === normalizedValue
+  )) || null
+}
+
+function coerceDomainFieldValuesToDescription() {
+  for (const [fieldKey, domainKey] of Object.entries(domainFieldKeys)) {
+    const option = findDomainOption(domainKey, form[fieldKey])
+    if (option && form[fieldKey] !== option.descricao) {
+      form[fieldKey] = option.descricao
+    }
+  }
+}
 
 function getFieldOptions(field) {
   const options = Array.isArray(field?.options?.value) ? field.options.value : []
@@ -525,6 +600,25 @@ function getFieldOptions(field) {
   return [currentValue, ...options]
 }
 
+async function loadDominiosFormulario() {
+  dominiosLoading.value = true
+  dominiosLoadError.value = ''
+
+  try {
+    const loadedDominios = await getDominiosFormularioEfluenteAPI()
+    for (const key of Object.keys(dominios)) {
+      dominios[key] = Array.isArray(loadedDominios?.[key]) ? loadedDominios[key] : []
+    }
+    coerceDomainFieldValuesToDescription()
+  } catch (err) {
+    console.error('Erro ao carregar dominios do formulario', err)
+    dominiosLoadError.value = err?.message || 'Não foi possível carregar as listas suspensas.'
+    setStatus(dominiosLoadError.value, 'error', 6000)
+  } finally {
+    dominiosLoading.value = false
+  }
+}
+
 watch(currentStep, async () => {
   if (activeStep.value.kind !== 'attachments') closeCamera({ silent: true })
   if (activeStep.value.kind === 'location') {
@@ -534,6 +628,8 @@ watch(currentStep, async () => {
 })
 
 onMounted(async () => {
+  await loadDominiosFormulario()
+
   if (isEditMode.value) {
     await loadEfluente()
     await loadAttachments()
@@ -599,9 +695,11 @@ function initializeNewEfluenteDateTime() {
   if (!form.dtDataDoCadastramento) form.dtDataDoCadastramento = date
   if (!form.hrHoraDoCadastramento) form.hrHoraDoCadastramento = time
 
-  // Define os valores padrão (1) para campos administrativos em novas inspeções
-  if (!form.txStatusDoRegistroNoBd) form.txStatusDoRegistroNoBd = 1
-  if (!form.txStatusDoDesvioAmbiental) form.txStatusDoDesvioAmbiental = 1
+  const defaultStatusRegistro = findDomainOption('statusRegistroBd', 1)?.descricao || ''
+  const defaultStatusDesvio = findDomainOption('statusDesvio', 1)?.descricao || ''
+
+  if (!form.txStatusDoRegistroNoBd) form.txStatusDoRegistroNoBd = defaultStatusRegistro
+  if (!form.txStatusDoDesvioAmbiental) form.txStatusDoDesvioAmbiental = defaultStatusDesvio
 }
 
 async function applyLatestInspectionData() {
@@ -752,6 +850,7 @@ function copyFixedFieldsFromLatestInspection(sourceData = {}) {
   for (const key of FIXED_FIELDS_FROM_LAST_INSPECTION) {
     form[key] = sourceData[key] ?? ''
   }
+  coerceDomainFieldValuesToDescription()
 }
 
 function copyFormFieldsFromFirstInspection(sourceData = {}) {
@@ -762,6 +861,7 @@ function copyFormFieldsFromFirstInspection(sourceData = {}) {
     form[key] = sourceData[key] ?? ''
   }
   form.pkCdMeioAmbienteCptm = ''
+  coerceDomainFieldValuesToDescription()
 }
 
 function getCurrentMonitoredElementKeys() {
@@ -850,6 +950,7 @@ async function loadEfluente() {
       localDraftId.value = localRecord.localId
       loadedFromLocal.value = true
       Object.assign(form, createEmptyEfluenteFormData(), localRecord.formData)
+      coerceDomainFieldValuesToDescription()
       setSelectedAttachments(getDraftAttachmentRecords(localRecord))
       console.log('dados exibidos', localRecord.formData)
       setStatus('', 'info')
@@ -860,6 +961,7 @@ async function loadEfluente() {
     const formData = mapApiEfluenteToFormData(apiData)
     console.log('dados api', apiData)
     Object.assign(form, createEmptyEfluenteFormData(), formData)
+    coerceDomainFieldValuesToDescription()
     setSelectedAttachments([])
     console.log('dados exibidos', formData)
     loadedFromLocal.value = false
@@ -1393,6 +1495,9 @@ function formatBytes(value) {
 
 function displayValue(field, value) {
   if (value === '' || value === null || value === undefined) return 'Nao informado'
+  if (field.type === 'domain-select') {
+    return findDomainOption(field.domainKey, value)?.descricao || value
+  }
   if (field.type === 'select') {
     const options = getFieldOptions(field)
     const found = options.find(o => o.codigo === value)
