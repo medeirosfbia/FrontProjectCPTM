@@ -15,7 +15,7 @@
           <span>Município</span>
           <select v-model="filters.municipio">
             <option value="">Todos</option>
-            <option v-for="value in municipioOptions" :key="value" :value="value">{{ value }}</option>
+            <option v-for="opt in municipioOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
           </select>
         </label>
 
@@ -23,7 +23,7 @@
           <span>Linha CPTM</span>
           <select v-model="filters.linha">
             <option value="">Todas</option>
-            <option v-for="value in linhaOptions" :key="value" :value="value">{{ value }}</option>
+            <option v-for="opt in linhaOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
           </select>
         </label>
 
@@ -31,7 +31,7 @@
           <span>Status</span>
           <select v-model="filters.status">
             <option value="">Todos</option>
-            <option v-for="value in statusOptions" :key="value" :value="value">{{ value }}</option>
+            <option v-for="opt in statusOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
           </select>
         </label>
 
@@ -76,7 +76,7 @@
             <dd>{{ formatDisplayDate(selectedRecord.data) }}</dd>
 
             <dt>Status</dt>
-            <dd>{{ selectedRecord.status || 'Não informado' }}</dd>
+            <dd>{{ selectedRecord.statusLabel || 'Não informado' }}</dd>
 
             <dt>Usuário que criou</dt>
             <dd>{{ selectedRecord.usuarioCriador || 'Não informado' }}</dd>
@@ -109,6 +109,7 @@ import PageContainer from './ui/PageContainer.vue'
 import ToastAlert from './ui/ToastAlert.vue'
 import { extractEfluenteItems, getAdminEfluentesAPI, getEfluentesMapaAPI } from '../services/api'
 import { queueDetailsRecord } from '../services/detailsCache'
+import { getDomainDescription } from '../services/efluenteModel'
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({ iconRetinaUrl: markerIcon2x, iconUrl: markerIcon, shadowUrl: markerShadow })
@@ -132,9 +133,9 @@ let markerLayer = null
 
 const recordsWithCoordinates = computed(() => records.value.filter(item => isValidCoordinate(item.latitude, item.longitude)))
 const filteredRecords = computed(() => recordsWithCoordinates.value.filter(matchesFilters))
-const municipioOptions = computed(() => uniqueOptions(recordsWithCoordinates.value.map(item => item.municipio)))
-const linhaOptions = computed(() => uniqueOptions(recordsWithCoordinates.value.map(item => item.linhaCptm)))
-const statusOptions = computed(() => uniqueOptions(recordsWithCoordinates.value.map(item => item.status)))
+const municipioOptions = computed(() => uniqueDomainOptions(recordsWithCoordinates.value, 'municipioId', 'municipio'))
+const linhaOptions = computed(() => uniqueDomainOptions(recordsWithCoordinates.value, 'linhaId', 'linhaCptm'))
+const statusOptions = computed(() => uniqueDomainOptions(recordsWithCoordinates.value, 'status', 'statusLabel'))
 
 watch(filteredRecords, renderMarkers)
 
@@ -192,15 +193,22 @@ function normalizeMapRecord(item = {}) {
   const longitude = toNumber(readValue(source, ['longitude', 'Longitude', 'lng', 'Lng', 'long', 'Long', 'nrLongGrauDecimalWgs84', 'NrLongGrauDecimalWgs84']))
   const data = readValue(source, ['data', 'Data', 'dtDataDoCadastramento', 'DtDataDoCadastramento', 'createdAt', 'CreatedAt'])
 
+  const mId = readValue(source, ['txMunicipio', 'cdMunicipio', 'CdMunicipio', 'municipioId', 'pkCdMunicipio'])
+  const lId = readValue(source, ['txLinhaCptm', 'cdLinha', 'CdLinha', 'linhaId', 'pkCdLinha'])
+  const statusRaw = readValue(source, ['txStatusDoRegistroNoBd', 'TxStatusDoRegistroNoBd', 'status', 'Status', 'syncStatus', 'SyncStatus']) || ''
+
   return {
     raw: source,
     id,
     numeroInspecao: readValue(source, ['numeroInspecao', 'NumeroInspecao', 'numero', 'Numero', 'nrNumeroDeFormulario', 'NrNumeroDeFormulario', 'txNrElementoMonitoramento', 'TxNrElementoMonitoramento']) || id || 'Não informado',
     latitude,
     longitude,
-    status: readValue(source, ['status', 'Status', 'syncStatus', 'SyncStatus', 'txStatusDoRegistroNoBd', 'TxStatusDoRegistroNoBd']) || '',
-    municipio: readValue(source, ['municipio', 'Municipio', 'Município', 'txMunicipio', 'TxMunicipio']) || '',
-    linhaCptm: readValue(source, ['linhaCptm', 'LinhaCptm', 'linha', 'Linha', 'txLinhaCptm', 'TxLinhaCptm']) || '',
+    status: statusRaw,
+    statusLabel: getSafeDomainLabel('txStatusDoRegistroNoBd', statusRaw),
+    municipioId: mId,
+    municipio: getSafeDomainLabel('txMunicipio', mId),
+    linhaId: lId,
+    linhaCptm: getSafeDomainLabel('txLinhaCptm', lId),
     usuarioCriador: readValue(source, [
       'usuarioCriador',
       'UsuarioCriador',
@@ -251,18 +259,35 @@ function isValidCoordinate(latitude, longitude) {
     && longitude <= 180
 }
 
+function getSafeDomainLabel(key, val) {
+  if (val === '' || val === null || val === undefined) return 'Não informado'
+  const desc = getDomainDescription(key, val)
+  return desc === 'Não informado' ? String(val) : desc
+}
+
 function matchesFilters(record) {
-  if (filters.municipio && record.municipio !== filters.municipio) return false
-  if (filters.linha && record.linhaCptm !== filters.linha) return false
-  if (filters.status && record.status !== filters.status) return false
+  if (filters.municipio && String(record.municipioId) !== String(filters.municipio)) return false
+  if (filters.linha && String(record.linhaId) !== String(filters.linha)) return false
+  if (filters.status && String(record.status) !== String(filters.status)) return false
   if (filters.dataInicio && (!record.dataIso || record.dataIso < filters.dataInicio)) return false
   if (filters.dataFim && (!record.dataIso || record.dataIso > filters.dataFim)) return false
   return true
 }
 
-function uniqueOptions(values) {
-  return [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+function uniqueDomainOptions(items, idField, labelField) {
+  const seen = new Set()
+  const options = []
+
+  for (const item of items) {
+    const id = item[idField]
+    const label = item[labelField] || id
+    if (id && !seen.has(id)) {
+      seen.add(id)
+      options.push({ id, label: String(label).trim() })
+    }
+  }
+
+  return options.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
 }
 
 function renderMarkers() {
