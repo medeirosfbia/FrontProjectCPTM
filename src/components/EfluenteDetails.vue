@@ -5,15 +5,15 @@
         <template #actions>
           <button class="btn" type="button" @click="goBack">Voltar</button>
           <button class="btn warning" type="button" @click="edit">Editar</button>
+          <button class="btn" type="button" :disabled="!hasGoogleMapsCoordinates" @click="openGoogleMaps">
+            Abrir no mapa
+          </button>
           <button class="btn info" type="button" @click="downloadPdf">Baixar PDF</button>
         </template>
       </Header>
 
-      <div v-if="loading" class="details-grid">
-        <LoadingSkeleton height="160px" />
-        <LoadingSkeleton height="160px" />
-        <LoadingSkeleton height="160px" />
-      </div>
+      <LoadingTrain v-if="loading" message="Carregando registros..." />
+      <LoadingTrain v-if="generatingPdf" message="Gerando PDF..." fullscreen />
 
       <ToastAlert :message="error" type="error" />
 
@@ -106,7 +106,7 @@ import logo from '../assets/cptm_logo_simples.png'
 import AppLayout from './ui/AppLayout.vue'
 import EmptyState from './ui/EmptyState.vue'
 import Header from './ui/Header.vue'
-import LoadingSkeleton from './ui/LoadingSkeleton.vue'
+import LoadingTrain from './ui/LoadingTrain.vue'
 import PageContainer from './ui/PageContainer.vue'
 import ToastAlert from './ui/ToastAlert.vue'
 import { EFLUENTE_DETAILS_SECTIONS } from '../services/efluenteDetailsSections'
@@ -133,6 +133,7 @@ const router = useRouter()
 const efluente = ref(null)
 const attachments = ref([])
 const loading = ref(true)
+const generatingPdf = ref(false)
 const error = ref('')
 const thumbnailUrls = ref({})
 let openedUrl = ''
@@ -178,6 +179,8 @@ const attachmentCount = computed(() => {
 
   return Number.isFinite(explicit) ? explicit : 0
 })
+const googleMapsCoordinates = computed(() => getGoogleMapsCoordinates(data.value))
+const hasGoogleMapsCoordinates = computed(() => Boolean(googleMapsCoordinates.value))
 
 onMounted(load)
 onBeforeUnmount(() => {
@@ -475,8 +478,51 @@ function goBack() {
   router.back()
 }
 
-function downloadPdf() {
+function getGoogleMapsCoordinates(source = {}) {
+  const lat = toCoordinateNumber(firstFilled(
+    source.nrLatGrauDecimalWgs84,
+    source.NrLatGrauDecimalWgs84,
+    source.latitude,
+    source.Latitude,
+    source.lat,
+    source.Lat
+  ))
+  const lng = toCoordinateNumber(firstFilled(
+    source.nrLongGrauDecimalWgs84,
+    source.NrLongGrauDecimalWgs84,
+    source.longitude,
+    source.Longitude,
+    source.lng,
+    source.Lng,
+    source.long,
+    source.Long
+  ))
+
+  if (lat === null || lng === null) return null
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
+  return { lat, lng }
+}
+
+function toCoordinateNumber(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const number = Number(String(value).replace(',', '.'))
+  return Number.isFinite(number) ? number : null
+}
+
+function openGoogleMaps() {
+  if (!googleMapsCoordinates.value) return
+  const { lat, lng } = googleMapsCoordinates.value
+  const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+async function downloadPdf() {
+  generatingPdf.value = true
+  await new Promise(resolve => setTimeout(resolve, 120))
   window.print()
+  setTimeout(() => {
+    generatingPdf.value = false
+  }, 500)
 }
 </script>
 

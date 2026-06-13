@@ -59,9 +59,7 @@
             </div>
 
             <!-- TAB: USUÁRIOS -->
-            <div v-if="loadingUsers" class="notice">
-                Carregando usuários...
-            </div>
+            <LoadingTrain v-if="loadingUsers" message="Carregando registros..." compact />
             <div v-if="currentTab === 'users'">
                 <!-- Visualizando um usuário específico -->
                 <div v-if="selectedUser" class="user-details">
@@ -74,9 +72,7 @@
                     />
                     <div class="table-wrap">
                         <!-- <div v-if="!userInspections.length" class="notice">{{ selectedUser.name }} não possui inspeções ainda.</div> -->
-                        <div v-if="loadingUserInspections" class="notice">
-                            Carregando registros...
-                        </div>
+                        <LoadingTrain v-if="loadingUserInspections" message="Carregando registros..." compact />
 
                         <div v-else-if="!userInspections.length" class="notice">
                             {{ selectedUser.name }} nao possui registros ainda.
@@ -161,8 +157,7 @@
                     <input class="inspection-search" v-model="inspectionSearchQuery" placeholder="Buscar por elemento, municipio ou linha..." />
                     <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhum efluente neste filtro.
                     </div>
-                    <div v-if="loadingApi" class="notice" >Sincronizando com o sistema central...
-                    </div>
+                    <LoadingTrain v-if="loadingApi || syncState === 'Sincronizando...'" message="Sincronizando registros..." compact />
 
                     <InspectionList
                         :items="filteredInspections"
@@ -193,7 +188,7 @@
 
                 <div class="table-wrap app-table">
                     <input class="inspection-search" v-model="deletedSearchQuery" placeholder="Buscar excluídos por elemento, município ou linha..." />
-                    <div v-if="loadingDeleted" class="notice">Carregando efluentes excluídos...</div>
+                    <LoadingTrain v-if="loadingDeleted" message="Carregando registros..." compact />
                     <div v-else-if="!filteredDeletedInspections.length" class="notice">Nenhum efluente excluído encontrado.</div>
                     <section v-else class="list">
                         <div v-for="ins in filteredDeletedInspections" :key="deletedItemId(ins)" class="inspection">
@@ -272,7 +267,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
-import { cleanupSentLocalInspections, enviarRascunho, sendInspectionNow } from '../services/sync'
+import { cleanupSentLocalInspections, enviarRascunho, sendInspectionNow, syncState } from '../services/sync'
 import { consumeQueuedToast } from '../services/toastQueue'
 import {
     deleteEfluenteAPI,
@@ -298,6 +293,7 @@ import {
 import QuickGrid from './QuickGrid.vue'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
 import InspectionList from './InspectionList.vue'
+import LoadingTrain from './ui/LoadingTrain.vue'
 
 // Gerais
 const router = useRouter()

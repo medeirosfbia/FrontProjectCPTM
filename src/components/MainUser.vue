@@ -53,7 +53,7 @@
             <div class="table-wrap">
                 <input class="inspection-search" v-model="searchQuery" placeholder="Buscar por elemento, municipio ou linha..." />
                 <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhum efluente neste filtro.</div>
-                <div v-if="loadingApi" class="notice" >Sincronizando com o sistema central...</div>
+                <LoadingTrain v-if="loadingApi || syncState === 'Sincronizando...'" message="Sincronizando registros..." compact />
 
                 <InspectionList
                     :items="filteredInspections"
@@ -84,7 +84,7 @@ import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
-import { cleanupSentLocalInspections, enviarRascunho, sendInspectionNow } from '../services/sync'
+import { cleanupSentLocalInspections, enviarRascunho, sendInspectionNow, syncState } from '../services/sync'
 import { deleteEfluenteAPI, extractEfluenteItems, getMeusEfluentesAPI } from '../services/api'
 import { getEfluenteCardTitle, normalizeApiEfluenteListItem, normalizeLocalEfluenteRecord, SYNC_STATUS } from '../services/efluenteModel'
 import { consumeQueuedToast } from '../services/toastQueue'
@@ -92,6 +92,7 @@ import { Plus, Calendar, Send, ClipboardList, LogOut, User } from 'lucide-vue-ne
 import QuickGrid from './QuickGrid.vue'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
 import InspectionList from './InspectionList.vue'
+import LoadingTrain from './ui/LoadingTrain.vue'
 
 onMounted(async () => {
     try {

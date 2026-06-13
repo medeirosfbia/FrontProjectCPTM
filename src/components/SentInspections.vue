@@ -16,7 +16,7 @@
         <button class="btn" @click="loadEfluentes(1)">Filtrar</button>
       </div>
 
-      <div v-if="loading" class="sync-message">Carregando registros enviados...</div>
+      <LoadingTrain v-if="loading" message="Carregando registros..." compact />
       <div v-if="error" class="sync-message error">{{ error }}</div>
 
       <div class="table-wrap app-table">
@@ -56,6 +56,7 @@ import { useRouter } from 'vue-router'
 import { extractEfluenteItems, getAdminEfluentesAPI, getIsAdmin, getMeusEfluentesAPI } from '../services/api'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
 import InspectionList from './InspectionList.vue'
+import LoadingTrain from './ui/LoadingTrain.vue'
 
 const router = useRouter()
 const items = ref([])

@@ -53,6 +53,7 @@
           <strong>{{ filteredRecords.length }} registro(s) no mapa</strong>
           <span>{{ recordsWithCoordinates.length }} com coordenadas válidas</span>
         </div>
+        <LoadingTrain v-if="loading" message="Carregando registros..." compact />
         <div id="records-map"></div>
         <ToastAlert :message="status" :type="statusType" />
       </section>
@@ -103,6 +104,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import logo from '../assets/cptm_logo_simples.png'
 import AppLayout from './ui/AppLayout.vue'
 import Header from './ui/Header.vue'
+import LoadingTrain from './ui/LoadingTrain.vue'
 import PageContainer from './ui/PageContainer.vue'
 import ToastAlert from './ui/ToastAlert.vue'
 import { extractEfluenteItems, getAdminEfluentesAPI, getEfluentesMapaAPI } from '../services/api'
