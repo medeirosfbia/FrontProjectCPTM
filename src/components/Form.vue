@@ -690,6 +690,11 @@ function initializeNewEfluenteDateTime() {
 async function applyLatestInspectionData() {
   if (isEditMode.value) return
 
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    setStatus('Você está offline. Não é possível buscar dados do servidor agora.', 'warning', 5000)
+    return
+  }
+
   if (copyLastInspectionBusy.value) return
   copyLastInspectionBusy.value = true
   setStatus('Buscando dados da última inspeção...', 'info')
@@ -709,7 +714,19 @@ async function applyLatestInspectionData() {
     setStatus('Dados da última inspeção copiados.', 'success')
   } catch (err) {
     console.error('Erro ao copiar dados da última inspeção', err)
-    setStatus(err?.message || 'Não foi possível copiar os dados da última inspeção.', 'error')
+    
+    let userFriendlyMessage = 'Não foi possível carregar os dados. Verifique sua conexão ou tente mais tarde.'
+
+    // Se o erro contém termos técnicos do Oracle (como o ORA-50201 que você recebeu)
+    const isTechnicalError = err.message?.includes('Oracle') || 
+                             err.message?.includes('ORA-') || 
+                             err.message?.includes('Communication');
+
+    if (isTechnicalError) {
+      userFriendlyMessage = 'O sistema central está com instabilidade na conexão com o banco de dados.'
+    }
+
+    setStatus(userFriendlyMessage, 'error', 6000)
   } finally {
     copyLastInspectionBusy.value = false
   }
