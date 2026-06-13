@@ -1,12 +1,16 @@
 <template>
     <div class="container">
         <div class="user-screen">
-            <div v-if="toastVisible" :class="['toast', toastType]">{{ toastMessage }}</div>
+            <div v-if="toastVisible" :class="['toast', toastType]">
+                <strong v-if="toastTitle">{{ toastTitle }}</strong>
+                <span>{{ toastMessage }}</span>
+            </div>
             <div class="user-header">
                 <div class="header-left">
                     <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
                     <div class="header-info">
-                        <h1>Inspeções</h1>
+                        <h1>Efluentes</h1>
+                        <p class="subtitle">Acompanhe rascunhos, envios pendentes e registros enviados</p>
                     </div>
                 </div>
                 <div class="user-area">
@@ -20,8 +24,8 @@
             <div v-if="modalVisible" class="modal-overlay" role="dialog" aria-modal="true">
                 <div class="modal">
                     <h3>{{ modalAction === 'delete' ? 'Confirmar exclusão' : 'Confirmar envio' }}</h3>
-                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} a inspeção "{{
-                        modalTarget?.title }}"?</p>
+                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} o registro "{{
+                        modalTargetTitle }}"?</p>
                     <div class="modal-actions">
                         <button class="btn cancel" @click="cancelModal">Cancelar</button>
                         <button v-if="modalAction == 'delete'" class="btn confirm delete" @click="confirmModal">Sim,
@@ -33,6 +37,12 @@
 
             <div class="controls">
                 <div v-if="status" class="sync-message">{{ status }}</div>
+                <div class="summary-grid">
+                    <div class="summary-card"><span>Total</span><strong>{{ dashboardStats.total }}</strong></div>
+                    <div class="summary-card"><span>Aguardando Envio</span><strong>{{ dashboardStats.pending }}</strong></div>
+                    <div class="summary-card"><span>Registros Enviados</span><strong>{{ dashboardStats.sent }}</strong></div>
+                    <div class="summary-card"><span>Rascunhos</span><strong>{{ dashboardStats.drafts }}</strong></div>
+                </div>
                 <QuickGrid 
                     :viewFilter="viewFilter" 
                     @setFilter="setFilter" 
@@ -41,13 +51,13 @@
             </div>
 
             <div class="table-wrap">
-                <input class="inspection-search" v-model="searchQuery" placeholder="Buscar por título..." />
-                <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhuma inspeção neste filtro.</div>
-                <div v-if="loadingApi" class="notice" style="color:blue;">Sincronizando com o banco de dados...</div>
+                <input class="inspection-search" v-model="searchQuery" placeholder="Buscar por elemento, municipio ou linha..." />
+                <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhum efluente neste filtro.</div>
+                <LoadingTrain v-if="loadingApi || syncState === 'Sincronizando...'" message="Sincronizando registros..." compact />
 
                 <InspectionList
                     :items="filteredInspections"
-                    title="Inspeções"
+                    title="Efluentes"
                     id-prefix="user-ins-"
                     :show-continue="true"
                     :show-send="true"
@@ -56,6 +66,7 @@
                     :on-send="(ins) => confirmAction('send', ins)"
                     :on-details="openDetails"
                     :on-delete="(ins) => confirmAction('delete', ins)"
+                    :on-cancel-pending="cancelPendingSend"
                 />
             </div>
         </div>
@@ -68,36 +79,52 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
-import { useRouter } from 'vue-router'
-import { onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
-import { syncInspections } from '../services/sync'
-import { getToken, getInspectionsAPI } from '../services/api'
+import { cleanupSentLocalInspections, enviarRascunho, sendInspectionNow, syncState } from '../services/sync'
+import { deleteEfluenteAPI, extractEfluenteItems, getMeusEfluentesAPI } from '../services/api'
+import { getEfluenteCardTitle, normalizeApiEfluenteListItem, normalizeLocalEfluenteRecord, SYNC_STATUS } from '../services/efluenteModel'
+import { consumeQueuedToast } from '../services/toastQueue'
 import { Plus, Calendar, Send, ClipboardList, LogOut, User } from 'lucide-vue-next'
 import QuickGrid from './QuickGrid.vue'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
 import InspectionList from './InspectionList.vue'
+import LoadingTrain from './ui/LoadingTrain.vue'
 
 onMounted(async () => {
     try {
+        await cleanupSentLocalInspections()
         const data = await getAllInspections()
         const currentUser = localStorage.getItem('user_email')
 
-        const minhasInspecoes = data.filter(i => {
-            return i.userEmail === currentUser
-        })
+        const minhasInspecoes = data
+            .map(normalizeLocalEfluenteRecord)
+            .filter(Boolean)
+            .filter(i => i.syncStatus !== SYNC_STATUS.SENT)
+            .filter(i => !i.userEmail || i.userEmail === currentUser)
 
         store.inspections = minhasInspecoes
 
     } catch (err) {
-        console.error("Erro ao carregar inspeções do IndexedDB", err)
+        console.error("Erro ao carregar rascunhos locais", err)
     }
 
-    // Carrega do backend e renderiza as duas via 'all'
-    await setFilter('all')
+    // Carrega do sistema central e renderiza junto com os rascunhos locais.
+    await setFilter(getInitialFilter())
+    showQueuedToast()
+
+    if (typeof window !== 'undefined') {
+        window.addEventListener('inspections-synced', handleSyncUpdated)
+    }
+})
+
+onBeforeUnmount(() => {
+    if (typeof window !== 'undefined') {
+        window.removeEventListener('inspections-synced', handleSyncUpdated)
+    }
 })
 
 
@@ -107,6 +134,7 @@ const newTitle = ref('')
 const showUserMenu = ref(false)
 const viewFilter = ref('all')
 const router = useRouter()
+const route = useRoute()
 const sentApiData = ref([])
 const loadingApi = ref(false)
 
@@ -116,6 +144,24 @@ const detailTarget = ref(null)
 const activeMenu = ref(null)
 function toggleMenu(id) {
     activeMenu.value = activeMenu.value === id ? null : id
+}
+
+async function handleSyncUpdated() {
+    try {
+        await cleanupSentLocalInspections()
+        const data = await getAllInspections()
+        const currentUser = localStorage.getItem('user_email')
+
+        store.inspections = data
+            .map(normalizeLocalEfluenteRecord)
+            .filter(Boolean)
+            .filter(i => i.syncStatus !== SYNC_STATUS.SENT)
+            .filter(i => !i.userEmail || i.userEmail === currentUser)
+
+        await setFilter(viewFilter.value)
+    } catch (err) {
+        console.error('Erro ao atualizar listagem apos sincronizacao', err)
+    }
 }
 
 function openDetails(ins) {
@@ -129,25 +175,7 @@ function closeDetails() {
 }
 
 function normalizeInspection(i) {
-    return {
-        ...i,
-        id: i.id ?? i.Id,
-        title: i.title ?? i.Title ?? i.titulo ?? 'Sem título',
-        location: i.location ?? i.Location,
-        latitude: i.latitude ?? i.Latitude,
-        longitude: i.longitude ?? i.Longitude,
-        address: i.address ?? i.Address,
-        notes: i.notes ?? i.Notes,
-        q1: i.q1 ?? i.Q1,
-        q2: i.q2 ?? i.Q2,
-        q3: i.q3 ?? i.Q3,
-        q4: i.q4 ?? i.Q4,
-        q5: i.q5 ?? i.Q5,
-        q6: i.q6 ?? i.Q6,
-        createdAt: i.createdAt ?? i.CreatedAt,
-        usuarioId: i.usuarioId ?? i.UsuarioId,
-        status: i.status ?? 'Enviado'
-    }
+    return i?.formData ? { ...i, ...i.formData } : normalizeApiEfluenteListItem(i)
 }
 
 // ✅ AGORA CRIA USANDO O STORE
@@ -155,12 +183,13 @@ async function createInspection(returnObj = false) {
 
     const title =
         newTitle.value.trim() ||
-        `Inspeção ${inspections.value.length + 1}`
+        `Registro ${inspections.value.length + 1}`
 
     const ins = {
         id: 'i' + Date.now(),
         title,
-        status: 'Não enviada',
+        status: 'Rascunho',
+        syncStatus: SYNC_STATUS.DRAFT,
         userEmail: localStorage.getItem('user_email') || ''
     }
 
@@ -182,76 +211,191 @@ function goToSentInspections() {
 }
 
 const status = ref('')
+const toastTitle = ref('')
 const toastMessage = ref('')
 const toastType = ref('')
 const toastVisible = ref(false)
+let toastTimer = null
 
 function showToast(msg, type = 'success', duration = 3000) {
-    toastMessage.value = msg
-    toastType.value = type
+    const payload = typeof msg === 'object' && msg !== null ? msg : { message: msg, type, duration }
+
+    if (toastTimer) {
+        clearTimeout(toastTimer)
+        toastTimer = null
+    }
+
+    toastTitle.value = payload.title || ''
+    toastMessage.value = payload.message || ''
+    toastType.value = payload.type || type
     toastVisible.value = true
-    setTimeout(() => {
+    toastTimer = setTimeout(() => {
         toastVisible.value = false
-    }, duration)
+        toastTitle.value = ''
+        toastTimer = null
+    }, payload.duration || duration)
 }
 
-async function sendInspection(ins) {
-    const idx = store.inspections.findIndex(i => i.id === ins.id)
+function showQueuedToast() {
+    const queued = consumeQueuedToast()
+    if (!queued) return
+    showToast(queued, queued.type, queued.duration)
+}
 
-    // persist as Aguardando Rede
+function getInitialFilter() {
+    return route.query.filter === 'scheduled' ? 'scheduled' : 'all'
+}
+
+async function enviarRascunhoPeloMenu(ins) {
+    console.log('[3 pontos] Enviar clicado', ins)
+    console.log('[3 pontos] localId', ins?.localId)
+
+    const localId = ins?.localId || ins?.id || ins?.pkCdMeioAmbienteCptm || ins?.formData?.pkCdMeioAmbienteCptm
+
     try {
-        ins.status = 'Aguardando Rede'
-        await saveInspection(ins)
-        if (idx >= 0) store.inspections[idx] = { ...ins }
-    } catch (e) {
-        console.error('Erro ao persistir localmente', e)
-        status.value = 'Erro ao salvar localmente. Fica em Aguardando Rede.'
-        return
-    }
+        const queued = await enviarRascunho(ins, {
+            onQueued: updateRecordInStore,
+            attemptSend: false
+        })
 
-    // if offline, notify and return
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        status.value = 'Sem conexão. Inspeção ficará em Aguardando Rede.'
-        return
-    }
-
-    // require auth
-    const token = getToken()
-    if (!token) {
-        status.value = 'Usuário não autenticado. Faça login para sincronizar.'
-        return
-    }
-
-    // attempt sync
-    status.value = 'Sincronizando com o Back-end...'
-    try {
-        await syncInspections()
-
-        const exists = store.inspections.find(i => i.id === ins.id)
-        if (!exists) {
-            status.value = 'Inspeção enviada e salva no banco de dados com sucesso!'
-        } else {
-            status.value = 'Erro ao enviar para o Back-end. A API (Oracle) pode estar fora do ar. Mantido no cache local para tentar mais tarde.'
+        if (!queued) {
+            showToast('Rascunho nao encontrado.', 'error')
+            return
         }
+
+        updateRecordInStore(queued)
+        status.value = 'Aguardando envio. Tentaremos enviar automaticamente quando a conexao ou o sistema central voltar.'
+        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
+
+        setTimeout(() => {
+            enviarRegistroEmSegundoPlano(queued, localId)
+        }, 0)
     } catch (e) {
         console.error('Erro ao sincronizar', e)
-        status.value = 'Erro: A conexão com o Back-end falhou. Re-tentaremos automaticamente.'
+        status.value = 'Sistema central indisponivel. O registro ficou aguardando envio e sera reenviado automaticamente.'
+        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
     }
+}
+
+async function enviarRegistroEmSegundoPlano(record, fallbackId) {
+    try {
+        console.log('[3 pontos] chamando sendInspectionNow forceSend=true')
+        const result = await sendInspectionNow(record, { forceSend: true })
+        if (!result) return
+
+        const localIdStr = String(result.localId || result.id || fallbackId || '')
+        if (result?.syncStatus === SYNC_STATUS.SENT) {
+            store.inspections = store.inspections.filter(i => String(i.localId || i.id) !== localIdStr)
+            await setFilter(viewFilter.value)
+            status.value = 'Registro enviado com sucesso.'
+            showToast('Registro enviado com sucesso.', 'success')
+            return
+        }
+
+        updateRecordInStore(result)
+
+        if (result?.syncStatus === SYNC_STATUS.PENDING_SYNC) {
+            status.value = 'Aguardando envio. Tentaremos enviar automaticamente quando a conexao ou o sistema central voltar.'
+            return
+        }
+
+        status.value = result?.lastError
+            ? `Erro de envio: ${result.lastError}`
+            : 'Erro de envio. Verifique os dados do registro.'
+        showToast('Erro de envio.', 'error')
+    } catch (e) {
+        console.error('Erro ao sincronizar em segundo plano', e)
+        const pending = normalizeLocalEfluenteRecord(record)
+        if (pending) {
+            pending.syncStatus = SYNC_STATUS.PENDING_SYNC
+            pending.status = 'Aguardando Envio'
+            pending.lastError = null
+            const saved = await saveInspection(pending)
+            updateRecordInStore(saved)
+        }
+        status.value = 'Sistema central indisponivel. O registro ficou aguardando envio e sera reenviado automaticamente.'
+    }
+}
+
+function updateRecordInStore(record) {
+    const normalized = normalizeLocalEfluenteRecord(record)
+    if (!normalized) return
+
+    const keys = [
+        normalized.localId,
+        normalized.id,
+        normalized.pkCdMeioAmbienteCptm,
+        normalized.serverId,
+        normalized.formData?.pkCdMeioAmbienteCptm
+    ].map(value => String(value || '')).filter(Boolean)
+    const idx = store.inspections.findIndex(item => [
+        item.localId,
+        item.id,
+        item.pkCdMeioAmbienteCptm,
+        item.serverId,
+        item.formData?.pkCdMeioAmbienteCptm
+    ].some(value => keys.includes(String(value || ''))))
+    store.inspections = idx >= 0
+        ? store.inspections.map((item, index) => index === idx ? { ...normalized } : item)
+        : [...store.inspections, normalized]
+}
+
+async function cancelPendingSend(ins) {
+    const normalized = normalizeLocalEfluenteRecord(ins)
+    if (!normalized) return
+
+    normalized.syncStatus = SYNC_STATUS.DRAFT
+    normalized.status = 'Rascunho'
+    const saved = await saveInspection(normalized)
+    const id = String(saved.localId || saved.id)
+    const idx = store.inspections.findIndex(i => String(i.localId || i.id) === id)
+    if (idx >= 0) store.inspections[idx] = saved
+    showToast('Envio cancelado. Registro voltou para rascunho.', 'success')
 }
 
 function goToForm(ins) {
-    router.push(`/form/${ins.id}`)
+    if (ins?.syncStatus === SYNC_STATUS.PENDING_SYNC) {
+        status.value = 'Registro aguardando envio. Ele sera enviado automaticamente quando a conexao ou o sistema central voltar.'
+        showToast('Registro aguardando envio.', 'warning')
+        return
+    }
+
+    const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
+    const id = isLocal
+        ? (ins.localId || ins.id)
+        : (ins.pkCdMeioAmbienteCptm || ins.serverId)
+
+    if (!id) {
+        showToast('ID do efluente nao encontrado.', 'error')
+        return
+    }
+
+    router.push(`/form/${encodeURIComponent(id)}`)
 }
 
 async function deleteInspection(ins) {
 
     try {
-        await deleteInspectionDB(ins.id)
-        store.inspections = store.inspections.filter(i => i.id !== ins.id)
-        showToast('Inspeção apagada localmente.', 'success')
+        const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
+        const id = isLocal
+            ? (ins.localId || ins.id)
+            : (ins.pkCdMeioAmbienteCptm || ins.serverId)
+        const localItem = isLocal
+            ? store.inspections.find(i => String(i.localId || i.id) === String(id))
+            : null
+
+        if (localItem) {
+            await deleteInspectionDB(id)
+            store.inspections = store.inspections.filter(i => String(i.localId || i.id) !== String(id))
+            showToast('Efluente apagado localmente.', 'success')
+        } else {
+            await deleteEfluenteAPI(id)
+            sentApiData.value = sentApiData.value.filter(i => String(i.pkCdMeioAmbienteCptm || i.serverId) !== String(id))
+            showToast('Efluente apagado do servidor.', 'success')
+        }
     } catch (err) {
-        console.error("Erro ao apagar inspeção", err)
-        showToast('Erro ao apagar inspeção localmente.', 'error')
+        console.error('Erro ao apagar efluente', err)
+        showToast('Erro ao apagar efluente.', 'error')
     }
 
 }
@@ -272,20 +416,16 @@ async function setFilter(key) {
     if (key === 'sent' || key === 'all') {
         loadingApi.value = true
         try {
-            let res = await getInspectionsAPI()
+            const response = await getMeusEfluentesAPI({ pageSize: 100 })
+            const arr = extractEfluenteItems(response)
 
-            let arr = []
-            if (res && res.data && Array.isArray(res.data)) arr = res.data
-            else if (Array.isArray(res)) arr = res
-
-            sentApiData.value = arr.map(i => ({
-                ...i,
-                status: 'Enviado'
-            }))
+            console.log('dados api', response)
+            sentApiData.value = arr.map(normalizeApiEfluenteListItem)
+            console.log('dados exibidos', sentApiData.value)
 
         } catch (e) {
-            console.error("Erro API Sent", e)
-            status.value = 'Erro ao buscar inspeções no banco.'
+            console.error("Erro ao carregar registros enviados", e)
+            status.value = 'Erro ao buscar registros enviados.'
         } finally {
             loadingApi.value = false
         }
@@ -294,6 +434,24 @@ async function setFilter(key) {
 
 const searchQuery = ref('')
 
+const dashboardStats = computed(() => {
+    const local = inspections.value || []
+    const sent = sentApiData.value || []
+    const mergedIds = new Set([
+        ...local.map(i => String(i.pkCdMeioAmbienteCptm || i.localId || i.id || '')),
+        ...sent.map(i => String(i.pkCdMeioAmbienteCptm || i.serverId || ''))
+    ])
+    const pending = local.filter(i => i.syncStatus === SYNC_STATUS.PENDING_SYNC).length
+    const drafts = local.filter(i => i.syncStatus === SYNC_STATUS.DRAFT).length
+
+    return {
+        total: mergedIds.size,
+        pending,
+        sent: sent.length,
+        drafts
+    }
+})
+
 // ✅ FILTRO AGORA USA STORE E MOSTRA TODAS
 const filteredInspections = computed(() => {
     let result = []
@@ -301,15 +459,15 @@ const filteredInspections = computed(() => {
         result = sentApiData.value
     } else if (viewFilter.value === 'all') {
         const merged = [...inspections.value]
-        const localIds = new Set(merged.map(i => String(i.id)))
+        const localIds = new Set(merged.map(i => String(i.pkCdMeioAmbienteCptm || i.localId || i.id)))
         for (const s of sentApiData.value) {
-            if (!localIds.has(String(s.id))) {
+            if (!localIds.has(String(s.pkCdMeioAmbienteCptm || s.serverId))) {
                 merged.push(s)
             }
         }
         result = merged.sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     } else if (viewFilter.value === 'scheduled') {
-        result = inspections.value.filter(i => i.status !== 'Enviado')
+        result = inspections.value.filter(i => i.syncStatus !== SYNC_STATUS.SENT)
     } else {
         result = inspections.value
     }
@@ -318,8 +476,18 @@ const filteredInspections = computed(() => {
     if (!q) return result
 
     return result.filter(i => {
-        const title = String(i.title || i.titulo || '').toLowerCase()
-        return title.includes(q)
+        const haystack = [
+            i.formData?.txNmElementoMonitoramento,
+            i.formData?.txNrElementoMonitoramento,
+            i.formData?.txMunicipio,
+            i.formData?.txLinhaCptm,
+            i.txNmElementoMonitoramento,
+            i.txNrElementoMonitoramento,
+            i.txMunicipio,
+            i.txLinhaCptm,
+            i.txEstacaoCptm
+        ].join(' ').toLowerCase()
+        return haystack.includes(q)
     })
 })
 
@@ -331,6 +499,7 @@ const filteredInspections = computed(() => {
 const modalVisible = ref(false)
 const modalAction = ref('')
 const modalTarget = ref(null)
+const modalTargetTitle = computed(() => modalTarget.value ? getEfluenteCardTitle(modalTarget.value) : '')
 
 function confirmAction(action, ins) {
     modalAction.value = action
@@ -338,21 +507,23 @@ function confirmAction(action, ins) {
     modalVisible.value = true
 }
 
-function confirmModal() {
+async function confirmModal() {
     if (!modalTarget.value) {
         modalVisible.value = false
         return
     }
 
-    if (modalAction.value === 'send') {
-        sendInspection(modalTarget.value)
-    } else if (modalAction.value === 'delete') {
-        deleteInspection(modalTarget.value)
-    }
-
+    const action = modalAction.value
+    const target = modalTarget.value
     modalVisible.value = false
     modalTarget.value = null
     modalAction.value = ''
+
+    if (action === 'send') {
+        await enviarRascunhoPeloMenu(target)
+    } else if (action === 'delete') {
+        await deleteInspection(target)
+    }
 }
 
 function cancelModal() {
@@ -427,8 +598,15 @@ function cancelModal() {
     color: #fff;
     font-weight: 700;
     box-shadow: 0 6px 18px rgba(16,24,40,0.12);
+    display: grid;
+    gap: 0.15rem;
+    max-width: min(420px, calc(100vw - 40px));
+}
+.toast span {
+    font-weight: 600;
 }
 .toast.success { background: #16a34a }
+.toast.warning { background: #ca8a04 }
 .toast.error { background: #ef4444 }
 
 .sync-message {

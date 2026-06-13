@@ -1,13 +1,16 @@
 <template>
     <div class="container">
         <div class="admin-screen">
-                <div v-if="toastVisible" :class="['toast', toastType]">{{ toastMessage }}</div>
+                <div v-if="toastVisible" :class="['toast', toastType]">
+                    <strong v-if="toastTitle">{{ toastTitle }}</strong>
+                    <span>{{ toastMessage }}</span>
+                </div>
             <div class="user-header">
                 <div class="header-left">
                     <img src="../assets/cptm_logo_simples.png" alt="CPTM" class="logo" />
                     <div class="header-info">
                         <h1>Área do Administrador</h1>
-                        <p class="subtitle">Gestão e Inspeções</p>
+                        <p class="subtitle">Gestao de usuarios e registros</p>
                     </div>
                 </div>
                 <div class="user-area">
@@ -26,53 +29,59 @@
                 </button>
                 <button class="tab-btn" :class="{ active: currentTab === 'my-inspections' }"
                     @click="setTab('my-inspections')">
-                    Minhas Inspeções
+                    Meus Registros
+                </button>
+                <button class="tab-btn" :class="{ active: currentTab === 'deleted-inspections' }"
+                    @click="setTab('deleted-inspections')">
+                    Excluídos
+                </button>
+                <button class="tab-btn" @click="openMap">
+                    Mapa
                 </button>
             </div>
 
             <!-- Modal de confirmação global -->
             <div v-if="modalVisible" class="modal-overlay" role="dialog" aria-modal="true">
                 <div class="modal">
-                    <h3>{{ modalAction === 'delete' ? 'Confirmar exclusão' : 'Confirmar envio' }}</h3>
-                    <p>Tem certeza que deseja {{ modalAction === 'delete' ? 'apagar' : 'enviar' }} a inspeção "{{
-                        modalTarget?.title }}"?</p>
+                    <h3>{{ modalTitle }}</h3>
+                    <p>{{ modalMessage }}</p>
                     <div class="modal-actions">
                         <button class="btn cancel" @click="cancelModal">Cancelar</button>
-                        <button v-if="modalAction == 'delete'" class="btn confirm delete" @click="confirmModal">Sim,
-                            apagar</button>
-                        <button v-else class="btn confirm send" @click="confirmModal">Sim, enviar</button>
+                        <button
+                            class="btn confirm"
+                            :class="modalAction === 'delete' ? 'delete' : 'send'"
+                            @click="confirmModal"
+                        >
+                            {{ modalConfirmLabel }}
+                        </button>
                     </div>
                 </div>
             </div>
 
             <!-- TAB: USUÁRIOS -->
-            <div v-if="loadingUsers" class="notice">
-                Carregando usuários...
-            </div>
+            <LoadingTrain v-if="loadingUsers" message="Carregando registros..." compact />
             <div v-if="currentTab === 'users'">
                 <!-- Visualizando um usuário específico -->
                 <div v-if="selectedUser" class="user-details">
                     <button class="btn ghost back-btn" @click="selectedUser = null">← Voltar para lista</button>
-                    <h2 class="user-inspections-title">Inspeções de {{ selectedUser.name }}</h2>
+                    <h2 class="user-inspections-title">Registros de {{ selectedUser.name }}</h2>
                     <input
                         class="inspection-search"
                         v-model="userInspectionSearchQuery"
-                        placeholder="Buscar por título..."
+                        placeholder="Buscar por elemento, municipio ou linha..."
                     />
                     <div class="table-wrap">
                         <!-- <div v-if="!userInspections.length" class="notice">{{ selectedUser.name }} não possui inspeções ainda.</div> -->
-                        <div v-if="loadingUserInspections" class="notice">
-                            Carregando inspeções...
-                        </div>
+                        <LoadingTrain v-if="loadingUserInspections" message="Carregando registros..." compact />
 
                         <div v-else-if="!userInspections.length" class="notice">
-                            {{ selectedUser.name }} não possui inspeções ainda.
+                            {{ selectedUser.name }} nao possui registros ainda.
                         </div>
                         <section v-else class="list">
                             <div v-for="ins in filteredUserInspections" :key="ins.id" class="inspection">
                                 <div class="left">
-                                    <strong class="inspection-title">{{ ins.title }}</strong>
-                                    <div class="mono">ID: {{ ins.id }}</div>
+                                    <strong class="inspection-title">{{ inspectionTitle(ins) }}</strong>
+                                    <div class="meta">{{ inspectionSubtitle(ins) }}</div>
                                 </div>
                                 <div class="right">
                                     <div :class="['status', statusClass(ins)]">{{ statusLabel(ins) }}</div>
@@ -145,15 +154,14 @@
                 </div>
 
                 <div class="table-wrap app-table">
-                    <input class="inspection-search" v-model="inspectionSearchQuery" placeholder="Buscar por título..." />
-                    <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhuma inspeção neste filtro.
+                    <input class="inspection-search" v-model="inspectionSearchQuery" placeholder="Buscar por elemento, municipio ou linha..." />
+                    <div v-if="!filteredInspections.length && !loadingApi" class="notice">Nenhum efluente neste filtro.
                     </div>
-                    <div v-if="loadingApi" class="notice" style="color:blue;">Sincronizando com o banco de dados...
-                    </div>
+                    <LoadingTrain v-if="loadingApi || syncState === 'Sincronizando...'" message="Sincronizando registros..." compact />
 
                     <InspectionList
                         :items="filteredInspections"
-                        title="Listagem de Inspeções"
+                        title="Listagem de Efluentes"
                         id-prefix="adm-ins-"
                         :show-continue="true"
                         :show-send="true"
@@ -163,7 +171,38 @@
                         :on-send="(ins) => confirmAction('send', ins)"
                         :on-details="openDetails"
                         :on-delete="(ins) => confirmAction('delete', ins)"
+                        :on-cancel-pending="cancelPendingSend"
                     />
+                </div>
+            </div>
+
+            <div v-if="currentTab === 'deleted-inspections'">
+                <div class="app-controls">
+                    <div v-if="status" class="sync-message">{{ status }}</div>
+                    <div class="deleted-toolbar">
+                        <button class="btn info" type="button" :disabled="loadingDeleted" @click="loadDeletedEfluentes">
+                            {{ loadingDeleted ? 'Carregando...' : 'Atualizar excluídos' }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-wrap app-table">
+                    <input class="inspection-search" v-model="deletedSearchQuery" placeholder="Buscar excluídos por elemento, município ou linha..." />
+                    <LoadingTrain v-if="loadingDeleted" message="Carregando registros..." compact />
+                    <div v-else-if="!filteredDeletedInspections.length" class="notice">Nenhum efluente excluído encontrado.</div>
+                    <section v-else class="list">
+                        <div v-for="ins in filteredDeletedInspections" :key="deletedItemId(ins)" class="inspection">
+                            <div class="left">
+                                <strong class="inspection-title">{{ inspectionTitle(ins) }}</strong>
+                                <div class="meta">{{ inspectionSubtitle(ins) }}</div>
+                            </div>
+                            <div class="right">
+                                <div class="status status--error">Excluído</div>
+                                <button class="btn" @click="openDeletedDetails(ins)">Ver detalhes</button>
+                                <button class="btn restore-btn" @click="confirmAction('restore', ins)">Restaurar</button>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </div>
 
@@ -223,20 +262,42 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useInspectionStore } from '../stores/inspectionStore'
 import { storeToRefs } from 'pinia'
 import { saveInspection, getAllInspections, deleteInspection as deleteInspectionDB } from '../services/db'
-import { deleteInspectionAPI } from '../services/api'
-import { syncInspections } from '../services/sync'
-import { getToken, getCurrentUserId, getInspectionsAPI, getUsuariosAPI, getInspecoesPorUsuarioAPI, criarUsuarioAPI, updateUsuarioAPI, deletarUsuarioAPI } from '../services/api'
+import { cleanupSentLocalInspections, enviarRascunho, sendInspectionNow, syncState } from '../services/sync'
+import { consumeQueuedToast } from '../services/toastQueue'
+import {
+    deleteEfluenteAPI,
+    extractEfluenteItems,
+    getAdminUsuarioEfluentesAPI,
+    getEfluentesExcluidosAPI,
+    getMeusEfluentesAPI,
+    getUsuariosAPI,
+    criarUsuarioAPI,
+    updateUsuarioAPI,
+    deletarUsuarioAPI,
+    restoreEfluenteAPI
+} from '../services/api'
+import {
+    getEfluenteCardSubtitle,
+    getEfluenteCardTitle,
+    getSyncStatusLabel,
+    getSyncStatusVariant,
+    normalizeApiEfluenteListItem,
+    normalizeLocalEfluenteRecord,
+    SYNC_STATUS
+} from '../services/efluenteModel'
 import QuickGrid from './QuickGrid.vue'
 import InspectionDetailsModal from './InspectionDetailsModal.vue'
 import InspectionList from './InspectionList.vue'
+import LoadingTrain from './ui/LoadingTrain.vue'
 
 // Gerais
 const router = useRouter()
+const route = useRoute()
 const showUserMenu = ref(false)
 const currentTab = ref('users') // 'users' ou 'my-inspections'
 const detailModalVisible = ref(false)
@@ -257,6 +318,9 @@ function setTab(tab) {
     currentTab.value = tab
     if (tab === 'users') {
         selectedUser.value = null
+    }
+    if (tab === 'deleted-inspections') {
+        loadDeletedEfluentes()
     }
 }
 
@@ -310,42 +374,23 @@ function formatDateForInput(value) {
 }
 
 function normalizeInspection(i) {
-    return {
-        ...i,
-        id: i.id ?? i.Id,
-        title: i.title ?? i.Title ?? i.titulo ?? 'Sem título',
-        location: i.location ?? i.Location,
-        latitude: i.latitude ?? i.Latitude,
-        longitude: i.longitude ?? i.Longitude,
-        address: i.address ?? i.Address,
-        notes: i.notes ?? i.Notes,
-        q1: i.q1 ?? i.Q1,
-        q2: i.q2 ?? i.Q2,
-        q3: i.q3 ?? i.Q3,
-        q4: i.q4 ?? i.Q4,
-        q5: i.q5 ?? i.Q5,
-        q6: i.q6 ?? i.Q6,
-        createdAt: i.createdAt ?? i.CreatedAt,
-        usuarioId: i.usuarioId ?? i.UsuarioId,
-        status: i.status ?? 'Enviado'
-    }
+    return i?.formData ? { ...i, ...i.formData } : normalizeApiEfluenteListItem(i)
 }
 
 function statusLabel(ins) {
-    return ins.status || 'Enviado'
-}
-
-function normalizedStatus(ins) {
-    return String(ins?.status || 'Enviado').trim().toLowerCase()
+    return getSyncStatusLabel(ins?.syncStatus || SYNC_STATUS.SENT)
 }
 
 function statusClass(ins) {
-    const value = normalizedStatus(ins)
+    return getSyncStatusVariant(ins?.syncStatus || SYNC_STATUS.SENT)
+}
 
-    if (value === 'enviado') return 'status--sent'
-    if (value.includes('aguard')) return 'status--waiting'
-    if (value.includes('não enviada') || value.includes('nao enviada') || value.includes('não enviado') || value.includes('nao enviado')) return 'status--draft'
-    return 'status--neutral'
+function inspectionTitle(ins) {
+    return getEfluenteCardTitle(ins)
+}
+
+function inspectionSubtitle(ins) {
+    return getEfluenteCardSubtitle(ins)
 }
 
 const filteredUserInspections = computed(() => {
@@ -353,8 +398,22 @@ const filteredUserInspections = computed(() => {
     if (!query) return userInspections.value
 
     return userInspections.value.filter(ins => {
-        const title = String(ins.title || ins.titulo || '').toLowerCase()
-        return title.includes(query)
+        const haystack = [
+            ins.title,
+            ins.titulo,
+            ins.formData?.txNmElementoMonitoramento,
+            ins.formData?.txNrElementoMonitoramento,
+            ins.formData?.txMunicipio,
+            ins.formData?.txLinhaCptm,
+            ins.formData?.txEstacaoCptm,
+            ins.txNmElementoMonitoramento,
+            ins.txNrElementoMonitoramento,
+            ins.txMunicipio,
+            ins.txLinhaCptm,
+            ins.txEstacaoCptm
+        ].join(' ').toLowerCase()
+
+        return haystack.includes(query)
     })
 })
 
@@ -369,8 +428,10 @@ async function carregarUsuarios() {
 
         for (const user of workers.value) {
             try {
-                const insp = await getInspecoesPorUsuarioAPI(user.id)
-                const lista = Array.isArray(insp) ? insp : insp?.data ?? []
+                const insp = await getAdminUsuarioEfluentesAPI(user.id, { pageSize: 100 })
+                const lista = extractEfluenteItems(insp)
+                console.log('dados api', insp)
+                console.log('dados exibidos', lista)
                 user.submissions = lista.length
             } catch {
                 user.submissions = 0
@@ -498,7 +559,6 @@ async function submitUserForm() {
 
         if (userModalMode.value === 'edit') {
             const payload = {
-                id: editingUserId.value,
                 nomeCompleto: userForm.value.nomeCompleto,
                 email: userForm.value.email,
                 dataNascimento: userForm.value.dataNascimento,
@@ -563,14 +623,16 @@ async function seeMore(w) {
     loadingUserInspections.value = true
 
     try {
-        const res = await getInspecoesPorUsuarioAPI(w.id)
-        const arr = Array.isArray(res) ? res : res?.data ?? []
+        const res = await getAdminUsuarioEfluentesAPI(w.id, { pageSize: 100 })
+        const arr = extractEfluenteItems(res)
 
+        console.log('dados api', res)
         userInspections.value = arr.map(normalizeInspection)
+        console.log('dados exibidos', userInspections.value)
         w.submissions = userInspections.value.length
     } catch (err) {
         console.error(err)
-        status.value = 'Erro ao carregar inspeções do usuário.'
+        status.value = 'Erro ao carregar registros do usuario.'
     } finally {
         loadingUserInspections.value = false
     }
@@ -584,52 +646,135 @@ const store = useInspectionStore()
 const { inspections } = storeToRefs(store)
 const viewFilter = ref('all')
 const inspectionSearchQuery = ref('')
+const deletedSearchQuery = ref('')
 const status = ref('')
 const loadingApi = ref(false)
+const loadingDeleted = ref(false)
 const sentApiData = ref([])
+const deletedEfluentes = ref([])
 
 // Toast
+const toastTitle = ref('')
 const toastMessage = ref('')
 const toastType = ref('')
 const toastVisible = ref(false)
+let toastTimer = null
+
+const adminDashboardStats = computed(() => {
+    const local = inspections.value || []
+    const sent = sentApiData.value || []
+    const mergedIds = new Set([
+        ...local.map(i => String(i.localId || i.id || '')),
+        ...sent.map(i => String(i.pkCdMeioAmbienteCptm || i.serverId || ''))
+    ])
+
+    return {
+        users: workers.value.length,
+        total: mergedIds.size,
+        pending: local.filter(i => i.syncStatus === SYNC_STATUS.PENDING_SYNC).length,
+        sent: sent.length
+    }
+})
 
 function showToast(msg, type = 'success', duration = 3000) {
-    toastMessage.value = msg
-    toastType.value = type
+    const payload = typeof msg === 'object' && msg !== null ? msg : { message: msg, type, duration }
+
+    if (toastTimer) {
+        clearTimeout(toastTimer)
+        toastTimer = null
+    }
+
+    toastTitle.value = payload.title || ''
+    toastMessage.value = payload.message || ''
+    toastType.value = payload.type || type
     toastVisible.value = true
-    setTimeout(() => { toastVisible.value = false }, duration)
+    toastTimer = setTimeout(() => {
+        toastVisible.value = false
+        toastTitle.value = ''
+        toastTimer = null
+    }, payload.duration || duration)
+}
+
+function showQueuedToast() {
+    const queued = consumeQueuedToast()
+    if (!queued) return
+    showToast(queued, queued.type, queued.duration)
+}
+
+function getInitialFilter() {
+    return route.query.filter === 'scheduled' ? 'scheduled' : 'all'
 }
 
 
 onMounted(async () => {
+    if (route.query.tab === 'my-inspections') currentTab.value = 'my-inspections'
+    if (route.query.tab === 'deleted-inspections') currentTab.value = 'deleted-inspections'
     await carregarUsuarios()
 
     try {
+        await cleanupSentLocalInspections()
         const data = await getAllInspections()
         const currentUser = localStorage.getItem('user_email')
 
-        store.inspections = data.filter(i => i.userEmail === currentUser)
+        store.inspections = data
+            .map(normalizeLocalEfluenteRecord)
+            .filter(Boolean)
+            .filter(i => i.syncStatus !== SYNC_STATUS.SENT)
+            .filter(i => !i.userEmail || i.userEmail === currentUser)
     } catch (err) {
-        console.error("Erro ao carregar inspeções", err)
+        console.error("Erro ao carregar rascunhos locais", err)
     }
 
-    // Carrega do backend e renderiza as duas via 'all'
-    await setFilter('all')
+    // Carrega do sistema central e renderiza junto com os rascunhos locais.
+    await setFilter(getInitialFilter())
+    if (currentTab.value === 'deleted-inspections') await loadDeletedEfluentes()
+    showQueuedToast()
+
+    if (typeof window !== 'undefined') {
+        window.addEventListener('inspections-synced', handleSyncUpdated)
+    }
 })
+
+onBeforeUnmount(() => {
+    if (typeof window !== 'undefined') {
+        window.removeEventListener('inspections-synced', handleSyncUpdated)
+    }
+})
+
+async function handleSyncUpdated() {
+    try {
+        await cleanupSentLocalInspections()
+        const data = await getAllInspections()
+        const currentUser = localStorage.getItem('user_email')
+
+        store.inspections = data
+            .map(normalizeLocalEfluenteRecord)
+            .filter(Boolean)
+            .filter(i => i.syncStatus !== SYNC_STATUS.SENT)
+            .filter(i => !i.userEmail || i.userEmail === currentUser)
+
+        await setFilter(viewFilter.value)
+    } catch (err) {
+        console.error('Erro ao atualizar listagem apos sincronizacao', err)
+    }
+}
 
 const filteredInspections = computed(() => {
     const currentUser = localStorage.getItem('user_email')
-    // Na aba de 'Minhas Inspeções', o Admin vê apenas as que ele mesmo criou
-    const myInspections = inspections.value.filter(i => i.userEmail === currentUser)
+    // Na aba de 'Meus Registros', o Admin ve apenas as que ele mesmo criou.
+    const myInspections = inspections.value
+        .map(normalizeLocalEfluenteRecord)
+        .filter(Boolean)
+        .filter(i => !i.userEmail || i.userEmail === currentUser)
 
     let result = []
 
     if (viewFilter.value === 'sent') result = sentApiData.value
     else if (viewFilter.value === 'all') {
         const merged = [...myInspections]
-        const localIds = new Set(merged.map(i => String(i.id)))
+        const localIds = new Set(merged.map(i => String(i.pkCdMeioAmbienteCptm || i.localId || i.id)))
         for (const s of sentApiData.value) {
-            if (!localIds.has(String(s.id))) {
+            if (!localIds.has(String(s.pkCdMeioAmbienteCptm || s.serverId))) {
                 merged.push(s)
             }
         }
@@ -637,17 +782,61 @@ const filteredInspections = computed(() => {
         result = merged.sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     }
 
-    else if (viewFilter.value === 'scheduled') result = myInspections.filter(i => i.status !== 'Enviado')
+    else if (viewFilter.value === 'scheduled') result = myInspections.filter(i => i.syncStatus !== SYNC_STATUS.SENT)
     else result = myInspections
 
     return applyInspectionSearch(result)
+})
+
+const filteredDeletedInspections = computed(() => {
+    const query = deletedSearchQuery.value.trim().toLowerCase()
+    const list = deletedEfluentes.value || []
+    if (!query) return list
+
+    return list.filter(i => {
+        const haystack = [
+            i.title,
+            i.titulo,
+            i.formData?.txNmElementoMonitoramento,
+            i.formData?.txNrElementoMonitoramento,
+            i.formData?.txMunicipio,
+            i.formData?.txLinhaCptm,
+            i.formData?.txEstacaoCptm,
+            i.txNmElementoMonitoramento,
+            i.txNrElementoMonitoramento,
+            i.txMunicipio,
+            i.txLinhaCptm,
+            i.txEstacaoCptm
+        ].join(' ').toLowerCase()
+        return haystack.includes(query)
+    })
 })
 
 function applyInspectionSearch(list) {
     const query = inspectionSearchQuery.value.trim().toLowerCase()
     if (!query) return list
 
-    return list.filter(i => String(i.title || i.titulo || '').toLowerCase().includes(query))
+    return list.filter(i => {
+        const haystack = [
+            i.title,
+            i.titulo,
+            i.formData?.txNmElementoMonitoramento,
+            i.formData?.txNrElementoMonitoramento,
+            i.formData?.txMunicipio,
+            i.formData?.txLinhaCptm,
+            i.formData?.txEstacaoCptm,
+            i.txNmElementoMonitoramento,
+            i.txNrElementoMonitoramento,
+            i.txMunicipio,
+            i.txLinhaCptm,
+            i.txEstacaoCptm
+        ].join(' ').toLowerCase()
+        return haystack.includes(query)
+    })
+}
+
+function deletedItemId(ins) {
+    return getEfluenteId(ins) || JSON.stringify(ins)
 }
 
 async function setFilter(key) {
@@ -655,24 +844,34 @@ async function setFilter(key) {
     if (key === 'sent' || key === 'all') {
         loadingApi.value = true
         try {
-            let res = await getInspectionsAPI()
+            const response = await getMeusEfluentesAPI({ pageSize: 100 })
+            const arr = extractEfluenteItems(response)
 
-            let arr = []
-            if (res && res.data && Array.isArray(res.data)) arr = res.data
-            else if (Array.isArray(res)) arr = res
-
-            // sentApiData.value = arr
-            const currentUserId = getCurrentUserId()
-
-            sentApiData.value = arr
-                .map(normalizeInspection)
-                .filter(i => Number(i.usuarioId) === Number(currentUserId))
+            console.log('dados api', response)
+            sentApiData.value = arr.map(normalizeApiEfluenteListItem)
+            console.log('dados exibidos', sentApiData.value)
         } catch (e) {
-            console.error("Erro API Sent", e)
-            status.value = 'Erro ao buscar inspeções no banco.'
+            console.error("Erro ao carregar registros enviados", e)
+            status.value = 'Erro ao buscar registros enviados.'
         } finally {
             loadingApi.value = false
         }
+    }
+}
+
+async function loadDeletedEfluentes() {
+    loadingDeleted.value = true
+    try {
+        const response = await getEfluentesExcluidosAPI({ pageSize: 100 })
+        deletedEfluentes.value = extractEfluenteItems(response).map(normalizeInspection)
+        status.value = ''
+    } catch (err) {
+        console.error('Erro ao carregar efluentes excluidos', err)
+        deletedEfluentes.value = []
+        status.value = 'Erro ao carregar efluentes excluídos.'
+        showToast('Erro ao carregar efluentes excluídos.', 'error')
+    } finally {
+        loadingDeleted.value = false
     }
 }
 
@@ -680,80 +879,233 @@ function openNewInspection() {
     router.push('/form/new')
 }
 
+function openMap() {
+    router.push('/map')
+}
+
+function getEfluenteId(ins) {
+    return ins?.localId
+        || ins?.id
+        || ins?.pkCdMeioAmbienteCptm
+        || ins?.serverId
+        || ins?.formData?.pkCdMeioAmbienteCptm
+}
+
+function removeEfluenteFromLists(id) {
+    const idStr = String(id || '')
+    if (!idStr) return
+
+    store.inspections = store.inspections.filter(i => String(getEfluenteId(i) || '') !== idStr)
+    sentApiData.value = sentApiData.value.filter(i => String(getEfluenteId(i) || '') !== idStr)
+    userInspections.value = userInspections.value.filter(i => String(getEfluenteId(i) || '') !== idStr)
+    deletedEfluentes.value = deletedEfluentes.value.filter(i => String(getEfluenteId(i) || '') !== idStr)
+}
+
+function openDeletedDetails(ins) {
+    openDetails(ins)
+}
+
 function goToForm(ins) {
-    router.push(`/form/${ins.id}`)
+    if (ins?.syncStatus === SYNC_STATUS.PENDING_SYNC) {
+        status.value = 'Registro aguardando envio. Ele sera enviado automaticamente quando a conexao ou o sistema central voltar.'
+        showToast('Registro aguardando envio.', 'warning')
+        return
+    }
+
+    const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
+    const id = isLocal
+        ? (ins.localId || ins.id)
+        : (ins.pkCdMeioAmbienteCptm || ins.serverId)
+
+    if (!id) {
+        status.value = 'ID do efluente nao encontrado.'
+        return
+    }
+
+    router.push(`/form/${encodeURIComponent(id)}`)
 }
 
 function goToEditInspection(ins) {
-    router.push(`/edit-inspection/${ins.id}`)
+    const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
+    const id = isLocal
+        ? (ins.localId || ins.id)
+        : (ins.pkCdMeioAmbienteCptm || ins.serverId)
+
+    if (!id) {
+        status.value = 'ID do efluente nao encontrado.'
+        return
+    }
+
+    router.push(`/edit-inspection/${encodeURIComponent(id)}`)
 }
 
-async function sendInspection(ins) {
-    const idx = store.inspections.findIndex(i => i.id === ins.id)
+async function enviarRascunhoPeloMenu(ins) {
+    console.log('[3 pontos] Enviar clicado', ins)
+    console.log('[3 pontos] localId', ins?.localId)
+
+    const localId = ins?.localId || ins?.id || ins?.pkCdMeioAmbienteCptm || ins?.formData?.pkCdMeioAmbienteCptm
+
     try {
-        ins.status = 'Aguardando Rede'
-        await saveInspection(ins)
-        if (idx >= 0) store.inspections[idx] = { ...ins }
+        const queued = await enviarRascunho(ins, {
+            onQueued: updateRecordInStore,
+            attemptSend: false
+        })
+
+        if (!queued) {
+            showToast('Rascunho nao encontrado.', 'error')
+            return
+        }
+
+        updateRecordInStore(queued)
+        status.value = 'Aguardando envio. Tentaremos enviar automaticamente quando a conexao ou o sistema central voltar.'
+        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
+
+        setTimeout(() => {
+            enviarRegistroEmSegundoPlano(queued, localId)
+        }, 0)
     } catch (e) {
-        status.value = 'Erro ao salvar localmente. Fica em Aguardando Rede.'
-        return
+        console.error('Erro ao sincronizar', e)
+        status.value = 'Sistema central indisponivel. O registro ficou aguardando envio e sera reenviado automaticamente.'
+        showToast('Aguardando envio. Tentaremos automaticamente.', 'warning')
     }
+}
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        status.value = 'Sem conexão. Inspeção ficará em Aguardando Rede.'
-        return
-    }
-
-    const token = getToken()
-    if (!token) {
-        status.value = 'Usuário não autenticado. Faça login para sincronizar.'
-        return
-    }
-
-    status.value = 'Sincronizando...'
+async function enviarRegistroEmSegundoPlano(record, fallbackId) {
     try {
-        await syncInspections()
-        const exists = store.inspections.find(i => i.id === ins.id)
-        if (!exists) status.value = 'Sincronizada com sucesso!'
-        else status.value = 'Permanece em Aguardando Rede.'
+        console.log('[3 pontos] chamando sendInspectionNow forceSend=true')
+        const result = await sendInspectionNow(record, { forceSend: true })
+        if (!result) return
+
+        const localIdStr = String(result.localId || result.id || fallbackId || '')
+        if (result?.syncStatus === SYNC_STATUS.SENT) {
+            store.inspections = store.inspections.filter(i => String(i.localId || i.id) !== localIdStr)
+            await setFilter(viewFilter.value)
+            status.value = 'Sincronizada com sucesso!'
+            showToast('Registro enviado com sucesso.', 'success')
+            return
+        }
+
+        updateRecordInStore(result)
+
+        if (result?.syncStatus === SYNC_STATUS.PENDING_SYNC) {
+            status.value = 'Aguardando envio. Tentaremos enviar automaticamente quando a conexao ou o sistema central voltar.'
+            return
+        }
+
+        status.value = result?.lastError
+            ? `Erro de envio: ${result.lastError}`
+            : 'Erro de envio. Verifique os dados do registro.'
+        showToast('Erro de envio.', 'error')
     } catch (e) {
-        status.value = 'Erro na sincronização.'
+        console.error('Erro ao sincronizar em segundo plano', e)
+        const pending = normalizeLocalEfluenteRecord(record)
+        if (pending) {
+            pending.syncStatus = SYNC_STATUS.PENDING_SYNC
+            pending.status = 'Aguardando Envio'
+            pending.lastError = null
+            const saved = await saveInspection(pending)
+            updateRecordInStore(saved)
+        }
+        status.value = 'Sistema central indisponivel. O registro ficou aguardando envio e sera reenviado automaticamente.'
     }
+}
+
+function updateRecordInStore(record) {
+    const normalized = normalizeLocalEfluenteRecord(record)
+    if (!normalized) return
+
+    const keys = [
+        normalized.localId,
+        normalized.id,
+        normalized.pkCdMeioAmbienteCptm,
+        normalized.serverId,
+        normalized.formData?.pkCdMeioAmbienteCptm
+    ].map(value => String(value || '')).filter(Boolean)
+    const idx = store.inspections.findIndex(item => [
+        item.localId,
+        item.id,
+        item.pkCdMeioAmbienteCptm,
+        item.serverId,
+        item.formData?.pkCdMeioAmbienteCptm
+    ].some(value => keys.includes(String(value || ''))))
+    store.inspections = idx >= 0
+        ? store.inspections.map((item, index) => index === idx ? { ...normalized } : item)
+        : [...store.inspections, normalized]
 }
 
 async function deleteInspection(ins) {
     try {
-        const idStr = String(ins.id)
+        const isLocal = ins.syncStatus && ins.syncStatus !== SYNC_STATUS.SENT
+        const id = getEfluenteId(ins)
 
-        const localIdx = store.inspections.findIndex(i => String(i.id) === idStr)
+        if (!id) {
+            showToast('ID do efluente nao encontrado.', 'error')
+            return
+        }
+
+        const idStr = String(id)
+        const localIdx = isLocal
+            ? store.inspections.findIndex(i => String(i.localId || i.id) === idStr)
+            : -1
 
         if (localIdx >= 0) {
-            // local item: remove from IndexedDB and store
             try {
-                await deleteInspectionDB(ins.id)
-                store.inspections = store.inspections.filter(i => String(i.id) !== idStr)
-                showToast('Inspeção apagada localmente.', 'success')
+                await deleteInspectionDB(id)
+                removeEfluenteFromLists(idStr)
+                showToast('Efluente excluído localmente.', 'success')
             } catch (e) {
                 console.error('Erro ao apagar localmente', e)
                 showToast('Erro ao apagar localmente.', 'error')
             }
         } else {
-            // server item: attempt backend delete then remove from sentApiData
             try {
-                await deleteInspectionAPI(idStr)
-                sentApiData.value = sentApiData.value.filter(i => String(i.id) !== idStr)
-                showToast('Inspeção apagada do servidor.', 'success')
+                await deleteEfluenteAPI(idStr)
+                removeEfluenteFromLists(idStr)
+                if (currentTab.value === 'deleted-inspections') await loadDeletedEfluentes()
+                showToast('Efluente excluído com sucesso.', 'success')
             } catch (e) {
                 console.error('Erro ao apagar no servidor', e)
-                status.value = 'Não foi possível apagar do servidor.'
+                status.value = 'Nao foi possivel apagar do servidor.'
                 showToast('Erro ao apagar no servidor.', 'error')
             }
         }
     } catch (err) {
-        console.error("Erro ao apagar inspeção", err)
+        console.error('Erro ao apagar efluente', err)
     }
 }
 
+async function restoreInspection(ins) {
+    const id = getEfluenteId(ins)
+    if (!id) {
+        showToast('ID do efluente nao encontrado.', 'error')
+        return
+    }
+
+    try {
+        await restoreEfluenteAPI(String(id))
+        removeEfluenteFromLists(id)
+        await loadDeletedEfluentes()
+        await setFilter(viewFilter.value)
+        showToast('Efluente restaurado com sucesso.', 'success')
+    } catch (err) {
+        console.error('Erro ao restaurar efluente', err)
+        status.value = 'Nao foi possivel restaurar o efluente.'
+        showToast('Erro ao restaurar efluente.', 'error')
+    }
+}
+
+async function cancelPendingSend(ins) {
+    const normalized = normalizeLocalEfluenteRecord(ins)
+    if (!normalized) return
+
+    normalized.syncStatus = SYNC_STATUS.DRAFT
+    normalized.status = 'Rascunho'
+    const saved = await saveInspection(normalized)
+    const id = String(saved.localId || saved.id)
+    const idx = store.inspections.findIndex(i => String(i.localId || i.id) === id)
+    if (idx >= 0) store.inspections[idx] = saved
+    showToast('Envio cancelado. Registro voltou para rascunho.', 'success')
+}
 function logout() {
     localStorage.removeItem("auth_token")
     localStorage.removeItem("user_role")
@@ -763,11 +1115,28 @@ function logout() {
 }
 
 // ------------------------------------
-// Modal de Confirmação (Minhas Inspeções)
+// Modal de confirmacao (Meus Registros)
 // ------------------------------------
 const modalVisible = ref(false)
 const modalAction = ref('')
 const modalTarget = ref(null)
+const modalTargetTitle = computed(() => modalTarget.value ? getEfluenteCardTitle(modalTarget.value) : '')
+const modalTitle = computed(() => {
+    if (modalAction.value === 'delete') return 'Confirmar exclusão'
+    if (modalAction.value === 'restore') return 'Confirmar restauração'
+    return 'Confirmar envio'
+})
+const modalMessage = computed(() => {
+    const title = modalTargetTitle.value
+    if (modalAction.value === 'delete') return `Tem certeza que deseja excluir o registro "${title}"?`
+    if (modalAction.value === 'restore') return `Tem certeza que deseja restaurar o registro "${title}"?`
+    return `Tem certeza que deseja enviar o registro "${title}"?`
+})
+const modalConfirmLabel = computed(() => {
+    if (modalAction.value === 'delete') return 'Sim, excluir'
+    if (modalAction.value === 'restore') return 'Sim, restaurar'
+    return 'Sim, enviar'
+})
 
 function confirmAction(action, ins) {
     modalAction.value = action
@@ -775,18 +1144,22 @@ function confirmAction(action, ins) {
     modalVisible.value = true
 }
 
-function confirmModal() {
+async function confirmModal() {
     if (!modalTarget.value) {
         modalVisible.value = false
         return
     }
 
-    if (modalAction.value === 'send') sendInspection(modalTarget.value)
-    else if (modalAction.value === 'delete') deleteInspection(modalTarget.value)
+    const action = modalAction.value
+    const target = modalTarget.value
 
     modalVisible.value = false
     modalTarget.value = null
     modalAction.value = ''
+
+    if (action === 'send') await enviarRascunhoPeloMenu(target)
+    else if (action === 'delete') await deleteInspection(target)
+    else if (action === 'restore') await restoreInspection(target)
 }
 
 function cancelModal() {
@@ -845,8 +1218,15 @@ function cancelModal() {
     color: #fff;
     font-weight: 700;
     box-shadow: 0 6px 18px rgba(16,24,40,0.12);
+    display: grid;
+    gap: 0.15rem;
+    max-width: min(420px, calc(100vw - 40px));
+}
+.toast span {
+    font-weight: 600;
 }
 .toast.success { background: #16a34a }
+.toast.warning { background: #ca8a04 }
 .toast.error { background: #ef4444 }
 
 .header-left {
@@ -1055,11 +1435,16 @@ function cancelModal() {
     cursor: pointer;
 }
 
-/* Estilos de app comum (Minhas inspeções) */
+/* Estilos de app comum (Meus Registros) */
 .app-controls {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+}
+
+.deleted-toolbar {
+    display: flex;
+    justify-content: flex-end;
 }
 
 .inspection-search {
@@ -1176,6 +1561,12 @@ function cancelModal() {
     color: #111;
 }
 
+.inspection .meta {
+    color: #4b5563;
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+}
+
 .inspection .mono {
     font-size: 0.85rem;
     color: #666;
@@ -1211,8 +1602,14 @@ function cancelModal() {
 }
 
 .inspection .status--draft {
-    background: #ffe6e6;
-    color: #b42318;
+    background: #f3f4f6;
+    color: #4b5563;
+    border-color: #e5e7eb;
+}
+
+.inspection .status--error {
+    background: #fde7e9;
+    color: #9f1239;
     border-color: #f5b4b4;
 }
 
@@ -1255,6 +1652,12 @@ function cancelModal() {
 .send-btn {
     background: #097a5e;
     color: #fff;
+}
+
+.restore-btn {
+    background: #097a5e;
+    color: #fff;
+    border-color: #097a5e;
 }
 
 .send-btn:disabled,

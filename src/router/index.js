@@ -6,11 +6,20 @@ import MainUser from '../components/MainUser.vue'
 import Form from '../components/Form.vue'
 import UserCreation from '../components/UserCreation.vue'
 import SentInspections from '../components/SentInspections.vue'
+import EfluenteDetails from '../components/EfluenteDetails.vue'
+import MapView from '../components/MapView.vue'
 import { getIsAdmin, getToken } from '../services/api'
 
 const routes = [
   { path: '/', component: Splash },
   { path: '/login', component: Login },
+  { path: '/dashboard', redirect: () => (getIsAdmin() ? '/main-admin' : '/main-user'), meta: { requiresAuth: true } },
+  { path: '/admin', component: MainAdm, meta: { requiresAuth: true } },
+  { path: '/inspections', component: MainUser, meta: { requiresAuth: true } },
+  { path: '/inspections/new', redirect: '/form/new', meta: { requiresAuth: true } },
+  { path: '/inspections/:id/edit', component: Form, props: true, meta: { requiresAuth: true } },
+  { path: '/inspections/:id/details', component: EfluenteDetails, props: true, meta: { requiresAuth: true } },
+  { path: '/map', component: MapView, meta: { requiresAuth: true } },
   { path: '/main-admin', component: MainAdm, meta: { requiresAuth: true } },
   { path: '/main-user', component: MainUser, meta: { requiresAuth: true } },
   { path: '/form/:id', component: Form, props: true, meta: { requiresAuth: true } },
@@ -33,7 +42,7 @@ router.beforeEach((to, from, next) => {
     return next(isAdmin ? '/main-admin' : '/main-user')
   }
 
-  if (to.path === '/main-admin' && token && !isAdmin) {
+  if ((to.path === '/main-admin' || to.path === '/admin') && token && !isAdmin) {
     return next('/main-user')
   }
 
