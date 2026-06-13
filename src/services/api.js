@@ -38,10 +38,14 @@ const SIM_NAO_DOMINIO_FALLBACK = [
 function normalizeDominioItems(items) {
   return Array.isArray(items)
     ? items
-      .map((item) => ({
-        codigo: item?.codigo ?? item?.Codigo ?? item?.id ?? item?.Id ?? '',
-        descricao: item?.descricao ?? item?.Descricao ?? item?.description ?? ''
-      }))
+      .map((item) => {
+        const code = item?.codigo ?? item?.Codigo ?? item?.id ?? item?.Id
+        return {
+          // Forçamos o código a ser String para garantir match no v-model do formulário
+          codigo: code !== undefined && code !== null ? String(code) : '',
+          descricao: item?.descricao ?? item?.Descricao ?? item?.description ?? ''
+        }
+      })
       .filter((item) => item.descricao !== '')
     : []
 }

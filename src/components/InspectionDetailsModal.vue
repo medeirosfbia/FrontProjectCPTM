@@ -109,7 +109,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { EFLUENTE_DETAILS_SECTIONS } from '../services/efluenteDetailsSections'
 import { getEfluenteAnexoBlobAPI, getEfluenteAnexosAPI, getEfluenteByPkAPI } from '../services/api'
-import { getSyncStatusLabel, mapApiEfluenteToFormData, SYNC_STATUS } from '../services/efluenteModel'
+import { getDomainDescription, getSyncStatusLabel, mapApiEfluenteToFormData, SYNC_STATUS } from '../services/efluenteModel'
 
 const props = defineProps({
   visible: {
@@ -145,13 +145,13 @@ const canEdit = computed(() => data.value.syncStatus !== SYNC_STATUS.PENDING_SYN
 const title = computed(() => firstFilled(
   data.value.txNmElementoMonitoramento,
   data.value.txNrElementoMonitoramento,
-  data.value.txOrigemEfluente,
-  data.value.txFonteGeradora,
+  getDomainDescription('txOrigemEfluente', data.value.txOrigemEfluente),
+  getDomainDescription('txFonteGeradora', data.value.txFonteGeradora),
   data.value.title,
   'Efluente sem nome'
 ))
 const statusText = computed(() => display(firstFilled(
-  data.value.txStatusDoRegistroNoBd,
+  getDomainDescription('txStatusDoRegistroNoBd', data.value.txStatusDoRegistroNoBd),
   data.value.status,
   data.value.syncStatus ? getSyncStatusLabel(data.value.syncStatus) : ''
 )))
@@ -216,7 +216,7 @@ function display(value) {
 function displayField(field) {
   const value = data.value[field.key]
   if (field.type === 'date') return displayDate(value)
-  return display(value)
+  return display(getDomainDescription(field.key, value))
 }
 
 function displayDate(value) {

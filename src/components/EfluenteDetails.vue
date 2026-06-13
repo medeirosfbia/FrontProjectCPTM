@@ -121,7 +121,12 @@ import {
   getMeusEfluentesAPI
 } from '../services/api'
 import { consumeDetailsRecord } from '../services/detailsCache'
-import { getSyncStatusLabel, mapApiEfluenteToFormData, normalizeLocalEfluenteRecord } from '../services/efluenteModel'
+import { 
+  getDomainDescription, 
+  getSyncStatusLabel, 
+  mapApiEfluenteToFormData, 
+  normalizeLocalEfluenteRecord 
+} from '../services/efluenteModel'
 
 const route = useRoute()
 const router = useRouter()
@@ -139,12 +144,12 @@ const pk = computed(() => firstFilled(data.value.pkCdMeioAmbienteCptm, data.valu
 const efluenteTitle = computed(() => firstFilled(
   data.value.txNmElementoMonitoramento,
   data.value.txNrElementoMonitoramento,
-  data.value.txOrigemEfluente,
-  data.value.txFonteGeradora,
+  getDomainDescription('txOrigemEfluente', data.value.txOrigemEfluente),
+  getDomainDescription('txFonteGeradora', data.value.txFonteGeradora),
   'Efluente sem nome'
 ))
 const statusText = computed(() => display(firstFilled(
-  data.value.txStatusDoRegistroNoBd,
+  getDomainDescription('txStatusDoRegistroNoBd', data.value.txStatusDoRegistroNoBd),
   data.value.status,
   data.value.syncStatus ? getSyncStatusLabel(data.value.syncStatus) : ''
 )))
@@ -347,7 +352,9 @@ function display(value) {
 function displayField(field) {
   const value = data.value[field.key]
   if (field.type === 'date') return displayDate(value)
-  return display(value)
+
+  // IDs são traduzidos usando a base local de domínios
+  return display(getDomainDescription(field.key, value))
 }
 
 function displayDate(value) {

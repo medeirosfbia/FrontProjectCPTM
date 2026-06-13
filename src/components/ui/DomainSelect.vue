@@ -11,7 +11,7 @@
       @change="$emit('update:modelValue', $event.target.value)"
     >
       <option value="">{{ loading ? 'Carregando opções...' : 'Selecione...' }}</option>
-      <option v-for="item in normalizedOptions" :key="item.codigo || item.descricao" :value="item.descricao">
+      <option v-for="item in normalizedOptions" :key="item.codigo || item.descricao" :value="item.codigo">
         {{ item.descricao }}
       </option>
     </select>

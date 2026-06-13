@@ -1,5 +1,5 @@
 export const EFLUENTE_DOMAINS = {
-  tipoProprietario: [
+  tiposProprietario: [
     { codigo: 1, descricao: 'CPTM - Titularidade' },
     { codigo: 2, descricao: 'CPTM - Posse' },
     { codigo: 3, descricao: 'Metrô' },
@@ -14,7 +14,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 13, descricao: 'FEPASA' },
     { codigo: 14, descricao: 'Permuta' }
   ],
-  tipoProprietarioL13: [
+  tiposProprietarioL13: [
     { codigo: 1, descricao: 'CPTM - Titularidade' },
     { codigo: 5, descricao: 'MRS' },
     { codigo: 15, descricao: 'Prefeitura de Guarulhos' },
@@ -34,7 +34,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 99, descricao: 'Indefinido(a)(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  statusRegistro: [
+  statusRegistroBd: [
     { codigo: 1, descricao: 'Ativo' },
     { codigo: 2, descricao: 'Inativo' },
     { codigo: 97, descricao: 'Não se aplica(m)' },
@@ -50,7 +50,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 99, descricao: 'Indefinido(a)(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  natureza: [
+  naturezasPga: [
     { codigo: 13, descricao: 'Áreas Ambientalmente Protegidas' },
     { codigo: 3, descricao: 'Áreas Contaminadas' },
     { codigo: 1, descricao: 'Arqueologia' },
@@ -99,7 +99,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 98, descricao: 'Inexistente(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  atividadeCptm: [
+  tiposAtividadeCptm: [
     { codigo: 1, descricao: 'Empreendimento/Obra' },
     { codigo: 2, descricao: 'Manutenção' },
     { codigo: 3, descricao: 'Operação' },
@@ -109,7 +109,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 98, descricao: 'Inexistente(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  edificacao: [
+  locaisAtividade: [
     { codigo: 1, descricao: 'Abrigo' },
     { codigo: 2, descricao: 'Base de manutenção' },
     { codigo: 3, descricao: 'Cabine Primária' },
@@ -130,7 +130,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 99, descricao: 'Indefinido(a)(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  origem: [
+  origensEfluente: [
     { codigo: 1, descricao: 'Doméstico/Sanitário' },
     { codigo: 2, descricao: 'Fundação' },
     { codigo: 3, descricao: 'Industrial' },
@@ -154,7 +154,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 99, descricao: 'Indefinido(a)(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  destinacao: [
+  tiposDestinacao: [
     { codigo: 1, descricao: 'Esgotamento e transporte' },
     { codigo: 2, descricao: 'Interligação em rede coletora' },
     { codigo: 3, descricao: 'Lançamento em galeria de águas pluviais' },
@@ -166,7 +166,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 99, descricao: 'Indefinido(a)(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  veiculo: [
+  tiposVeiculo: [
     { codigo: 1, descricao: 'Caminhão' },
     { codigo: 96, descricao: 'Outro(a)(s)' },
     { codigo: 97, descricao: 'Não se aplica(m)' },
@@ -174,7 +174,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 99, descricao: 'Indefinido(a)(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  siglaMeioAmbiente: [
+  siglasDepartamentoMeioAmbiente: [
     { codigo: 1, descricao: 'GEA' },
     { codigo: 2, descricao: 'GEA.DEAE' },
     { codigo: 3, descricao: 'GEA.DEAO' },
@@ -183,7 +183,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 99, descricao: 'Indefinido(a)(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  areaGestora: [
+  areasGestoras: [
     { codigo: 1, descricao: '(DE.GEA.0000) GERENCIA DE MEIO AMBIENTE [ID.10-14-4-0-0000]' },
     { codigo: 2, descricao: '(DE.GEA.DEAE.0000) DEPTO. DE MEIO AMBIENTE - EMPREENDIMENTOS [ID.10-14-4-1-0000]' },
     { codigo: 3, descricao: '(DE.GEA.DEAO.0000) DEPTO. DE MEIO AMBIENTE - OPERACAO [ID.10-14-4-2-0000]' },
@@ -252,7 +252,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 999, descricao: 'Indefinido(a)(s)' },
     { codigo: 1000, descricao: 'Não avaliado(a)(s)' }
   ],
-  municipio: [
+  municipios: [
     { codigo: 24, descricao: 'Arujá' },
     { codigo: 10, descricao: 'Barueri' },
     { codigo: 25, descricao: 'Biritiba-Mirim' },
@@ -305,7 +305,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 999, descricao: 'Indefinido(a)(s)' },
     { codigo: 1000, descricao: 'Não avaliado(a)(s)' }
   ],
-  linha: [
+  linhas: [
     { codigo: 1, descricao: 'Linha 07 - Rubi' },
     { codigo: 2, descricao: 'Linha 08 - Diamante' },
     { codigo: 3, descricao: 'Linha 09 - Esmeralda' },
@@ -344,7 +344,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 99, descricao: 'Indefinido(a)(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  via: [
+  vias: [
     { codigo: 1, descricao: 'Via 01' },
     { codigo: 2, descricao: 'Via 02' },
     { codigo: 3, descricao: 'Via 03' },
@@ -369,7 +369,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 99, descricao: 'Indefinido(a)(s)' },
     { codigo: 100, descricao: 'Não avaliado(a)(s)' }
   ],
-  estacao: [
+  estacoes: [
     { codigo: 1, descricao: 'Estação Aeroporto Guarulhos' },
     { codigo: 2, descricao: 'Estação Água Branca' },
     { codigo: 3, descricao: 'Estação Antonio Gianetti Neto' },
@@ -471,7 +471,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 999, descricao: 'Indefinido(a)(s)' },
     { codigo: 1000, descricao: 'Não avaliado(a)(s)' }
   ],
-  trecho: [
+  trechosSentidos: [
     { codigo: 62, descricao: 'Estação Aeroporto Guarulhos - Estação Guarulhos - Cecap' },
     { codigo: 126, descricao: 'Estação Aeroporto Guarulhos - Final dos Trilhos' },
     { codigo: 38, descricao: 'Estação Água Branca - Estação Lapa' },
@@ -599,7 +599,7 @@ export const EFLUENTE_DOMAINS = {
     { codigo: 39, descricao: 'Final dos Trilhos - Estação Estudantes' },
     { codigo: 115, descricao: 'Final dos Trilhos - Estação Jundiaí' }
   ],
-  proprietario: [
+  proprietarios: [
     { codigo: 1, descricao: 'CPTM - Titularidade' },
     { codigo: 2, descricao: 'CPTM - Posse' },
     { codigo: 3, descricao: 'Metrô' },

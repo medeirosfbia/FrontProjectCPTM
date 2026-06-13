@@ -304,6 +304,7 @@ import {
   createDraftRecord,
   createEmptyEfluenteFormData,
   EFLUENTE_FIELD_KEYS,
+  getDomainDescription,
   getDraftAttachmentRecords,
   mapApiEfluenteToFormData,
   normalizeLocalEfluenteRecord,
@@ -410,7 +411,7 @@ const domainFieldKeys = {
 }
 
 const institutionalFields = [
-  { key: 'txNomePjDaContratada', label: 'Nome (Pesso Jurídica) da Contratada', help: 'Inserir o nome e sigla da Contratada. Separar nome e sigla por " - ". A sigla pode conter até 10 caracteres, maiúsculos e sem espaços.', example: 'Companhia Paulista de Trens Metropolitanos S.A. - CPTM', wide: true },
+  { key: 'txNomePjDaContratada', label: 'Nome (Pessoa Jurídica) da Contratada', help: 'Inserir o nome e sigla da Contratada. Separar nome e sigla por " - ". A sigla pode conter até 10 caracteres, maiúsculos e sem espaços.', example: 'Companhia Paulista de Trens Metropolitanos S.A. - CPTM', wide: true },
   { key: 'txNrContratoContratada', label: 'Nº do Contrato (da Contratada)', help: 'Inserir o identificador do contrato da Contratada, se aplicável. Padrão: Número/Código com até 12 caracteres e sem espaços.', example: 'AR01234-56' },
   { key: 'txNmLocalEscopoContratual', label: 'Local do Escopo Contratual (Pseudônimo)', help: 'Indicar um nome genérico para o local do escopo contratual ou área/trecho da CPTM.', example: 'Pátio Capuava' },
   { key: 'txNomePfDaRepresentante', label: 'Representante (PF) da Contratada e/ou Área Gestora da CPTM', help: 'Inserir o nome do responsável interlocutor da Contratada e/ou da Área Gestora da CPTM para assuntos de meio ambiente, utilizando no máximo 89 caracteres.', example: 'Pessoa 1 / Pessoa 2', wide: true },
@@ -547,6 +548,7 @@ const reviewGroups = computed(() => [
 
 // Automação de campos derivada do domínio de Área Gestora
 watch(() => form.txNmAreaGestoraCptm, (newVal) => {
+  if (!newVal) return
   const option = findDomainOption('areasGestoras', newVal)
   if (option) {
     const desc = option.descricao || ''
@@ -571,24 +573,17 @@ function findDomainOption(domainKey, value) {
   )) || null
 }
 
-function coerceDomainFieldValuesToDescription() {
-  for (const [fieldKey, domainKey] of Object.entries(domainFieldKeys)) {
-    const option = findDomainOption(domainKey, form[fieldKey])
-    if (option && form[fieldKey] !== option.descricao) {
-      form[fieldKey] = option.descricao
-    }
-  }
-}
-
 function getFieldOptions(field) {
   const options = Array.isArray(field?.options?.value) ? field.options.value : []
   const currentValue = form[field?.key]
+  
+  // Garantir que estamos comparando IDs (códigos)
+  if (field.type === 'domain-select' || field.type === 'select') {
+    const domainKey = field.domainKey || domainFieldKeys[field.key]
+    if (domainKey) return getDomainOptions(domainKey)
+  }
 
-  // Verifica se o valor atual (codigo) existe nas opções
-  if (!currentValue || options.some(o => o.codigo === currentValue)) return options
-
-  // Fallback caso o valor não exista (ex: rascunho antigo)
-  return [currentValue, ...options]
+  return options
 }
 
 async function loadDominiosFormulario() {
@@ -600,7 +595,6 @@ async function loadDominiosFormulario() {
     for (const key of Object.keys(dominios)) {
       dominios[key] = Array.isArray(loadedDominios?.[key]) ? loadedDominios[key] : []
     }
-    coerceDomainFieldValuesToDescription()
   } catch (err) {
     console.error('Erro ao carregar dominios do formulario', err)
     dominiosLoadError.value = err?.message || 'Não foi possível carregar as listas suspensas.'
@@ -686,8 +680,8 @@ function initializeNewEfluenteDateTime() {
   if (!form.dtDataDoCadastramento) form.dtDataDoCadastramento = date
   if (!form.hrHoraDoCadastramento) form.hrHoraDoCadastramento = time
 
-  const defaultStatusRegistro = findDomainOption('statusRegistroBd', 1)?.descricao || ''
-  const defaultStatusDesvio = findDomainOption('statusDesvio', 1)?.descricao || ''
+  const defaultStatusRegistro = findDomainOption('statusRegistroBd', 1)?.codigo || 1
+  const defaultStatusDesvio = findDomainOption('statusDesvio', 1)?.codigo || 1
 
   if (!form.txStatusDoRegistroNoBd) form.txStatusDoRegistroNoBd = defaultStatusRegistro
   if (!form.txStatusDoDesvioAmbiental) form.txStatusDoDesvioAmbiental = defaultStatusDesvio
@@ -726,7 +720,6 @@ function copyFixedFieldsFromLatestInspection(sourceData = {}) {
     if (FIELDS_NOT_COPIED_FROM_LAST_INSPECTION.has(key)) continue
     form[key] = sourceData[key] ?? ''
   }
-  coerceDomainFieldValuesToDescription()
 }
 
 async function loadEfluente() {
@@ -742,7 +735,6 @@ async function loadEfluente() {
       localDraftId.value = localRecord.localId
       loadedFromLocal.value = true
       Object.assign(form, createEmptyEfluenteFormData(), localRecord.formData)
-      coerceDomainFieldValuesToDescription()
       setSelectedAttachments(getDraftAttachmentRecords(localRecord))
       console.log('dados exibidos', localRecord.formData)
       setStatus('', 'info')
@@ -753,7 +745,6 @@ async function loadEfluente() {
     const formData = mapApiEfluenteToFormData(apiData)
     console.log('dados api', apiData)
     Object.assign(form, createEmptyEfluenteFormData(), formData)
-    coerceDomainFieldValuesToDescription()
     setSelectedAttachments([])
     console.log('dados exibidos', formData)
     loadedFromLocal.value = false
@@ -1286,16 +1277,8 @@ function formatBytes(value) {
 }
 
 function displayValue(field, value) {
-  if (value === '' || value === null || value === undefined) return 'Nao informado'
-  if (field.type === 'domain-select') {
-    return findDomainOption(field.domainKey, value)?.descricao || value
-  }
-  if (field.type === 'select') {
-    const options = getFieldOptions(field)
-    const found = options.find(o => o.codigo === value)
-    return found ? found.descricao : value
-  }
-  return value
+  if (value === '' || value === null || value === undefined) return 'Não informado'
+  return getDomainDescription(field.key, value)
 }
 
 function clearAttachmentPreview() {

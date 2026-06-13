@@ -1,3 +1,5 @@
+import { EFLUENTE_DOMAINS } from '../data/efluenteDomains'
+
 export const SYNC_STATUS = {
   DRAFT: 'DRAFT',
   PENDING_SYNC: 'PENDING_SYNC',
@@ -96,6 +98,43 @@ export const DATE_EFLUENTE_FIELDS = new Set([
 export const TIME_EFLUENTE_FIELDS = new Set([
   'hrHoraDoCadastramento'
 ])
+
+const FIELD_TO_DOMAIN_MAP = {
+  txMunicipio: 'municipios',
+  txLinhaCptm: 'linhas',
+  txEstacaoCptm: 'estacoes',
+  txViaCptm: 'vias',
+  txTrechoESentidoCptm: 'trechosSentidos',
+  txStatusDoRegistroNoBd: 'statusRegistroBd',
+  txStatusDoDesvioAmbiental: 'statusDesvio',
+  txNaturezaDoPga: 'naturezasPga',
+  txProprietario: 'proprietarios',
+  txOrigemEfluente: 'origensEfluente',
+  txFonteGeradora: 'fonteGeradora',
+  txTipoDestinacao: 'tiposDestinacao',
+  txTipoVeiculo: 'tiposVeiculo',
+  txTipoAtividadeListada: 'tipoAtividadeListada',
+  txTipoDraListado: 'tipoDraListado',
+  txTipoAtividadeCptm: 'tiposAtividadeCptm',
+  txNmLocalAtiv: 'locaisAtividade',
+  txSiglaDeptoMeioAmbiente: 'siglasDepartamentoMeioAmbiente',
+  txOfereceRiscoSistemaCptm: 'simNao',
+  txNmAreaGestoraCptm: 'areasGestoras'
+}
+
+/**
+ * Busca a descrição amigável na base local de domínios.
+ */
+export function getDomainDescription(fieldKey, value) {
+  if (value === '' || value === null || value === undefined) return ''
+  const domainKey = FIELD_TO_DOMAIN_MAP[fieldKey]
+  if (!domainKey) return value
+
+  const options = EFLUENTE_DOMAINS[domainKey] || []
+  // Busca estrita pelo código. Não busca mais por descrição.
+  const found = options.find(o => String(o.codigo) === String(value))
+  return found ? found.descricao : 'Não informado'
+}
 
 function canUseCryptoUuid() {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -253,31 +292,40 @@ export function createEmptyEfluenteFormData() {
 
 export function toNumberOrNull(value) {
   if (value === '' || value === null || value === undefined) return null
-  const number = Number(value)
-  return Number.isFinite(number) ? number : null
+  // Limpa espaços e garante que seja string antes do replace
+  const strValue = String(value).trim()
+  if (strValue === '') return null
+  // Converte para string e limpa vírgulas (padrão brasileiro) para ponto
+  const normalizedValue = strValue.replace(',', '.')
+  const number = Number(normalizedValue)
+  // Arredonda para 8 casas decimais (conforme novo DDL)
+  return Number.isFinite(number) ? parseFloat(number.toFixed(8)) : null
 }
 
 export function buildEfluentePayload(formData, { ensurePk = false } = {}) {
   const payload = {}
+  const domainFields = new Set(Object.keys(FIELD_TO_DOMAIN_MAP))
 
   for (const key of EFLUENTE_FIELD_KEYS) {
+    const val = formData?.[key]
+
     if (NUMERIC_EFLUENTE_FIELDS.has(key)) {
-      payload[key] = toNumberOrNull(formData?.[key])
+      payload[key] = toNumberOrNull(val)
     } else if (DATE_EFLUENTE_FIELDS.has(key)) {
-      payload[key] = normalizeDate(formData?.[key])
+      payload[key] = normalizeDate(val)
     } else if (TIME_EFLUENTE_FIELDS.has(key)) {
-      payload[key] = normalizeTimeInputValue(formData?.[key])
+      payload[key] = normalizeTimeInputValue(val)
+    } else if (domainFields.has(key)) {
+      // Persistência estrita de ID como String ou null
+      if (val === '' || val === null || val === undefined) {
+        payload[key] = null
+      } else {
+        const idValue = (typeof val === 'object') ? (val.codigo ?? val.id) : val
+        payload[key] = (idValue !== undefined && idValue !== null) ? String(idValue) : null
+      }
     } else {
-      payload[key] = formData?.[key] ?? ''
+      payload[key] = (val === '' || val === undefined || val === null) ? null : val
     }
-  }
-
-  if (!payload.pkCdMeioAmbienteCptm && ensurePk) {
-    payload.pkCdMeioAmbienteCptm = crypto.randomUUID()
-  }
-
-  if (!payload.pkCdMeioAmbienteCptm) {
-    delete payload.pkCdMeioAmbienteCptm
   }
 
   return payload
@@ -329,16 +377,25 @@ function readApiValue(source = {}, key) {
 
 export function mapApiEfluenteToFormData(apiResponse = {}) {
   const source = unwrapApiEfluenteSource(apiResponse)
-
   const formData = createEmptyEfluenteFormData()
+  const domainFields = new Set(Object.keys(FIELD_TO_DOMAIN_MAP))
 
   for (const key of EFLUENTE_FIELD_KEYS) {
-    const value = readApiValue(source, key) ?? ''
-    formData[key] = DATE_EFLUENTE_FIELDS.has(key)
-      ? normalizeDateInputValue(value)
-      : TIME_EFLUENTE_FIELDS.has(key)
-        ? normalizeTimeInputValue(value)
-      : (value ?? '')
+    const rawValue = readApiValue(source, key)
+    const value = (rawValue === undefined || rawValue === null) ? '' : rawValue
+
+    if (domainFields.has(key) && value !== '') {
+      // Se o valor vindo do banco/cache for um objeto, extrai o código.
+      // Caso contrário, assume que é o ID. Se for texto, não encontrará match no Select.
+      const idValue = (typeof value === 'object') ? (value.codigo ?? value.id) : value
+      formData[key] = (idValue !== undefined && idValue !== null) ? String(idValue) : ''
+    } else if (DATE_EFLUENTE_FIELDS.has(key)) {
+      formData[key] = normalizeDateInputValue(value)
+    } else if (TIME_EFLUENTE_FIELDS.has(key)) {
+      formData[key] = normalizeTimeInputValue(value)
+    } else {
+      formData[key] = value ?? ''
+    }
   }
 
   return formData
@@ -438,8 +495,8 @@ export function getEfluenteCardTitle(item = {}) {
   const data = item.formData || item
   return data.txNmElementoMonitoramento
     || data.txNrElementoMonitoramento
-    || data.txOrigemEfluente
-    || data.txFonteGeradora
+    || (getDomainDescription('txOrigemEfluente', data.txOrigemEfluente) || null)
+    || (getDomainDescription('txFonteGeradora', data.txFonteGeradora) || null)
     || data.title
     || data.titulo
     || 'Efluente sem nome'
@@ -447,7 +504,11 @@ export function getEfluenteCardTitle(item = {}) {
 
 export function getEfluenteCardSubtitle(item = {}) {
   const data = item.formData || item
-  const parts = [data.txMunicipio, data.txLinhaCptm, data.txEstacaoCptm].filter(Boolean)
+  const parts = [
+    getDomainDescription('txMunicipio', data.txMunicipio),
+    getDomainDescription('txLinhaCptm', data.txLinhaCptm),
+    getDomainDescription('txEstacaoCptm', data.txEstacaoCptm)
+  ].filter(val => val && val !== 'Não informado')
   return parts.length ? parts.join(' | ') : 'Localizacao nao informada'
 }
 
@@ -485,12 +546,17 @@ export function validateEfluenteForSubmit(formData) {
   const data = buildEfluentePayload(formData)
   const errors = []
 
-  if (!data.txNmElementoMonitoramento && !data.txNrElementoMonitoramento) {
+  // Validamos a presença do dado no formData original para evitar erros de conversão
+  const isMissing = (key) => formData[key] === null || formData[key] === undefined || String(formData[key]).trim() === ''
+
+  if (isMissing('txNmElementoMonitoramento') && isMissing('txNrElementoMonitoramento')) {
     errors.push('Informe o nome ou numero do elemento de monitoramento.')
   }
-  if (!data.txMunicipio) errors.push('Informe o municipio.')
-  if (!data.txLinhaCptm) errors.push('Informe a linha CPTM.')
-  if (!data.txOrigemEfluente && !data.txFonteGeradora) {
+  
+  if (isMissing('txMunicipio')) errors.push('Informe o municipio.')
+  if (isMissing('txLinhaCptm')) errors.push('Informe a linha CPTM.')
+  
+  if (isMissing('txOrigemEfluente') && isMissing('txFonteGeradora')) {
     errors.push('Informe a origem do efluente ou a fonte geradora.')
   }
   if (!data.dtDataDoCadastramento) errors.push('Informe a data do cadastramento.')
