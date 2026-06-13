@@ -29,6 +29,9 @@
 
       <div class="modal-actions top-actions">
         <button v-if="canEdit" class="btn warning" type="button" @click="editCurrent">Editar</button>
+        <button class="btn" type="button" :disabled="!hasGoogleMapsCoordinates" @click="openGoogleMaps">
+          Abrir no mapa
+        </button>
         <button class="btn" type="button" @click="downloadPdf">Baixar PDF</button>
         <button class="btn" type="button" @click.stop="toggleFullscreen">
           {{ isFullscreen ? 'Sair da tela inteira' : 'Ver tela inteira' }}
@@ -36,7 +39,8 @@
         <button class="btn cancel" type="button" @click="close">Voltar</button>
       </div>
 
-      <div v-if="detailsLoading" class="loading-state">Carregando detalhes do efluente...</div>
+      <LoadingTrain v-if="detailsLoading" message="Carregando registros..." compact />
+      <LoadingTrain v-if="generatingPdf" message="Gerando PDF..." fullscreen />
 
       <div class="modal-content">
         <section v-for="section in detailSections" :key="section.title" class="info-group">
@@ -55,7 +59,7 @@
             <span>{{ attachmentCount }} anexo(s)</span>
           </div>
 
-          <div v-if="attachmentsLoading" class="photo-status">Carregando anexos...</div>
+          <LoadingTrain v-if="attachmentsLoading" message="Carregando registros..." compact />
           <div v-else-if="attachmentItems.length" class="attachment-sections">
             <div v-if="imageAttachments.length" class="attachment-block">
               <h5>Imagens</h5>
@@ -110,6 +114,7 @@ import { useRouter } from 'vue-router'
 import { EFLUENTE_DETAILS_SECTIONS } from '../services/efluenteDetailsSections'
 import { getEfluenteAnexoBlobAPI, getEfluenteAnexosAPI, getEfluenteByPkAPI } from '../services/api'
 import { getSyncStatusLabel, mapApiEfluenteToFormData, SYNC_STATUS } from '../services/efluenteModel'
+import LoadingTrain from './ui/LoadingTrain.vue'
 
 const props = defineProps({
   visible: {
@@ -130,6 +135,7 @@ const serverDetails = ref(null)
 const attachments = ref([])
 const attachmentsLoading = ref(false)
 const detailsLoading = ref(false)
+const generatingPdf = ref(false)
 const isFullscreen = ref(false)
 const thumbnailUrls = ref({})
 const previewUrl = ref('')
@@ -181,6 +187,8 @@ const attachmentCount = computed(() => {
 
   return Number.isFinite(explicit) ? explicit : 0
 })
+const googleMapsCoordinates = computed(() => getGoogleMapsCoordinates(data.value))
+const hasGoogleMapsCoordinates = computed(() => Boolean(googleMapsCoordinates.value))
 
 function close() {
   isFullscreen.value = false
@@ -313,8 +321,51 @@ function editCurrent() {
   router.push(`/form/${encodeURIComponent(pk.value)}`)
 }
 
-function downloadPdf() {
+function getGoogleMapsCoordinates(source = {}) {
+  const lat = toCoordinateNumber(firstFilled(
+    source.nrLatGrauDecimalWgs84,
+    source.NrLatGrauDecimalWgs84,
+    source.latitude,
+    source.Latitude,
+    source.lat,
+    source.Lat
+  ))
+  const lng = toCoordinateNumber(firstFilled(
+    source.nrLongGrauDecimalWgs84,
+    source.NrLongGrauDecimalWgs84,
+    source.longitude,
+    source.Longitude,
+    source.lng,
+    source.Lng,
+    source.long,
+    source.Long
+  ))
+
+  if (lat === null || lng === null) return null
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
+  return { lat, lng }
+}
+
+function toCoordinateNumber(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const number = Number(String(value).replace(',', '.'))
+  return Number.isFinite(number) ? number : null
+}
+
+function openGoogleMaps() {
+  if (!googleMapsCoordinates.value) return
+  const { lat, lng } = googleMapsCoordinates.value
+  const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+async function downloadPdf() {
+  generatingPdf.value = true
+  await new Promise(resolve => setTimeout(resolve, 120))
   window.print()
+  setTimeout(() => {
+    generatingPdf.value = false
+  }, 500)
 }
 
 function formatBytes(value) {
